@@ -4,17 +4,23 @@ Schema v2:  "TID2|" + base64url(canonical JSON) + "|" + base64url(Ed25519 signat
   payload = {"v": 2, "kid": key id, "n": NAME, "d": DD/MM/YYYY, "g": M|F, "id": 12-digit specimen ID, "i": DD/MM/YYYY}
 The full ID binds the card to one identity (v1 carried only the last 4 digits, which collide across people).
 
+Encrypted variant: "TID3|" + base64url(12-byte nonce + AES-256-GCM(the whole TID2 text)). Signing stops forgery;
+encryption also hides the contents from anyone who scans the card without the issuer's AES key (data/issuer_keys/qr_aes.key).
+Tampering with the ciphertext fails the GCM check and is reported as INVALID_SIGNATURE.
+
 Roles are separate: generators sign with the issuer PRIVATE key; the verifier only loads allow-listed PUBLIC keys
 (data/issuer_keys/<kid>.pub) and never creates keys. No trusted key configured -> verification UNAVAILABLE."""
 import base64
 import json
+import os
 import re
 
 import cv2
 import numpy as np
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from app.config import KEYS
 
@@ -60,12 +66,24 @@ def canonical(payload: dict) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 
 
-def make_qr_text(fields: dict, key: Ed25519PrivateKey | None = None, kid: str = KID) -> str:
-    """fields: n, d, g, id, i (see module doc)."""
+def qr_aes_key(create: bool = False) -> bytes | None:
+    path = KEYS / "qr_aes.key"
+    if not path.exists() and create:  # issuer side only; the verifier never creates keys
+        path.write_bytes(AESGCM.generate_key(bit_length=256))
+        path.chmod(0o600)
+    return path.read_bytes() if path.exists() else None
+
+
+def make_qr_text(fields: dict, key: Ed25519PrivateKey | None = None, kid: str = KID, encrypt: bool = False) -> str:
+    """fields: n, d, g, id, i (see module doc). encrypt=True wraps the signed text in AES-256-GCM (TID3)."""
     payload = {"v": 2, "kid": kid, **{k: fields[k] for k in ("n", "d", "g", "id", "i")}}
     body = canonical(payload)
     sig = (key or issuer_key()).sign(body)
-    return f"{PREFIX}|{base64.urlsafe_b64encode(body).decode()}|{base64.urlsafe_b64encode(sig).decode()}"
+    text = f"{PREFIX}|{base64.urlsafe_b64encode(body).decode()}|{base64.urlsafe_b64encode(sig).decode()}"
+    if not encrypt:
+        return text
+    nonce = os.urandom(12)
+    return "TID3|" + base64.urlsafe_b64encode(nonce + AESGCM(qr_aes_key(create=True)).encrypt(nonce, text.encode(), None)).decode()
 
 
 # ---------------------------------------------------------------- verifier side
@@ -83,6 +101,17 @@ def parse_and_verify(text: str | None) -> tuple[dict | None, str]:
     """Returns (payload if structurally valid, status). Only VALID means the issuer signed exactly these fields."""
     if not text:
         return None, NOT_FOUND
+    if text.startswith("TID3|"):
+        aes = qr_aes_key()
+        if aes is None:
+            return None, NO_KEYS
+        try:
+            raw = base64.urlsafe_b64decode(text[5:])
+            text = AESGCM(aes).decrypt(raw[:12], raw[12:], None).decode()
+        except InvalidTag:
+            return None, INVALID_SIG  # ciphertext altered (or encrypted with a key that is not the issuer's)
+        except (ValueError, UnicodeDecodeError):
+            return None, MALFORMED
     parts = text.split("|")
     if len(parts) != 3 or parts[0] != PREFIX:
         return None, MALFORMED

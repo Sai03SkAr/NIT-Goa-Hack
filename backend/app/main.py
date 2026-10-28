@@ -629,15 +629,15 @@ def attack_live(req: LiveAttack):
     today = datetime.fromisoformat(a["ts"]).date()
     before = doc.assess(doc.extract(card), form, today)
     after = doc.assess(doc.extract(after_img), form_after, today)
-    ok, enc = cv2.imencode(".jpg", after_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    jpg = lambda img: "data:image/jpeg;base64," + base64.b64encode(cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()).decode()
     from app.modules.document import trufor
     tf = trufor.available()
     pick = lambda r, img: {"risk": r.risk, "reasons": [x.model_dump() for x in r.reasons], "forensic": r.features["doc_forensic"],
                            "qr_valid": r.evidence["qr_signature_valid"], "qr_status": r.evidence.get("qr_status"),
                            "ocr": r.evidence["ocr"], "qr": r.evidence["qr"],
                            "trufor": trufor.analyze(doc.normalize(img)) if tf else None}
-    return P.jsonable({"before": pick(before, card), "after": pick(after, after_img), "truth": a["fraud_type"],
-                       "image": "data:image/jpeg;base64," + base64.b64encode(enc.tobytes()).decode()})
+    return P.jsonable({"before": pick(before, card) | {"image": jpg(card)}, "after": pick(after, after_img) | {"image": jpg(after_img)},
+                       "truth": a["fraud_type"]})
 
 
 class Ask(BaseModel):
@@ -680,10 +680,11 @@ def ring_sim():
 
 
 @app.post("/api/testkit")
-def testkit():
-    """Fresh test identities + cards + expected outcomes (see docs/TESTING.md)."""
+def testkit(encrypted: int = 0):
+    """Fresh test identities + cards + expected outcomes (see docs/TESTING.md). ?encrypted=N: N genuine people with
+    signed and encrypted QR cards instead of the scenario set."""
     from app.testkit import build_testkit
-    return build_testkit(P.Runtime.hist)
+    return build_testkit(P.Runtime.hist, encrypted=max(0, min(encrypted, 20)))
 
 
 @app.post("/api/demo/kit")

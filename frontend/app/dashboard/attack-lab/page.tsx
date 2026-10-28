@@ -143,21 +143,19 @@ function LiveAttack() {
         <button className="btn btn-primary ml-auto" disabled={busy || !appId} onClick={run}><Play className="size-4" />{busy ? "Attacking…" : "Run attack"}</button>
       </div>
       {res && (
-        <div className="fade-up mt-5 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-          <img src={res.image} alt="attacked card" className="rounded-lg border border-line" />
-          <div className="space-y-3">
-            {(["before", "after"] as const).map((k) => <AttackResult key={k} title={k === "before" ? "Clean card" : "Attacked card"} r={res[k]} />)}
-          </div>
+        <div className="fade-up mt-5 grid gap-5 lg:grid-cols-2">
+          {(["before", "after"] as const).map((k) => <AttackResult key={k} title={k === "before" ? "Clean card" : "Forged card"} r={res[k]} />)}
         </div>
       )}
     </Section>
   );
 }
 
-type Side = { risk: number; forensic: number; reasons: { code: string; text: string; weight: number }[]; ocr?: Record<string, string>;
+type Side = { image: string; risk: number; forensic: number; reasons: { code: string; text: string; weight: number }[]; ocr?: Record<string, string>;
   qr?: Record<string, string>; qr_valid?: boolean; trufor?: { score: number; heatmap: string } | null };
 
 function AttackResult({ title, r }: { title: string; r: Side }) {
+  const [view, setView] = useState<"card" | "trufor">("card");
   const found = r.reasons.filter((x) => x.weight > 0);
   const rows: [string, string | undefined, string | undefined][] = [
     ["Name", r.ocr?.name, r.qr?.n], ["Date of birth", r.ocr?.dob, r.qr?.d], ["ID number", r.ocr?.id_number, r.qr?.id],
@@ -171,6 +169,21 @@ function AttackResult({ title, r }: { title: string; r: Side }) {
           {found.length ? `${found.length} finding${found.length > 1 ? "s" : ""}` : "No findings"}
         </span>
       </div>
+      <div className="mt-3 overflow-hidden rounded-lg border border-line">
+        <img src={view === "trufor" && r.trufor ? fileUrl(r.trufor.heatmap) : r.image} alt={view === "trufor" ? `TruFor heatmap of the ${title.toLowerCase()}` : title}
+          className="block w-full" />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <div className="flex rounded-lg bg-bg-2 p-0.5 text-xs" role="tablist">
+          {([["card", "Card"], ["trufor", "TruFor heatmap"]] as const).map(([v, l]) => (
+            <button key={v} role="tab" aria-selected={view === v} disabled={v === "trufor" && !r.trufor} onClick={() => setView(v)}
+              className={clsx("whitespace-nowrap rounded-md px-2.5 py-1 disabled:opacity-40", view === v ? "bg-panel font-medium shadow-sm" : "text-muted hover:text-fg")}>{l}</button>
+          ))}
+        </div>
+        {r.trufor ? <span className="text-xs text-muted">TruFor score <span className="tabular-nums text-fg">{r.trufor.score.toFixed(2)}</span></span>
+          : <span className="text-xs text-dim">TruFor not installed</span>}
+      </div>
+      {view === "trufor" && r.trufor && <p className="mt-1.5 text-xs text-dim">Red marks pixels TruFor believes were manipulated. Shown as evidence only; it never changes the decision.</p>}
       <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
         {[["Document risk", r.risk.toFixed(2)], ["Pixel forensics", r.forensic.toFixed(2)], ["Issuer signature", r.qr_valid ? "Valid" : "Missing or invalid"]].map(([k, v]) => (
           <div key={k}><dt className="text-dim">{k}</dt><dd className="mt-0.5 text-sm tabular-nums text-fg">{v}</dd></div>
@@ -189,8 +202,6 @@ function AttackResult({ title, r }: { title: string; r: Side }) {
         </tbody>
       </table>
       {found.length > 0 && <ul className="mt-3 space-y-1.5 border-t border-line pt-3">{found.map((x) => <Finding key={x.code} text={x.text} code={x.code} weight={x.weight} />)}</ul>}
-      {r.trufor && <div className="mt-3 border-t border-line pt-2.5 text-xs text-muted">TruFor score <span className="tabular-nums text-fg">{r.trufor.score.toFixed(2)}</span>
-        {" · "}<a href={fileUrl(r.trufor.heatmap)} target="_blank" className="text-brand hover:underline">View heatmap</a></div>}
     </div>
   );
 }

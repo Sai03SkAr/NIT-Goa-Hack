@@ -60,7 +60,7 @@ Real-world fraud methods from 2024 to 2026 and how each is handled: **[docs/THRE
 | # | Deliverable | Where |
 |---|---|---|
 | D1 | Multi-source correlation | `backend/app/modules/registry`, `modules/correlation` (specificity-weighted graph, Louvain, family exception), 3-way QR↔OCR↔form in `modules/document/agent.py` |
-| D2 | AI-generated document forgery | Ed25519 signed QR (`qr_sign.py`), Verhoeff/PAN checks, date gate, OCR, cheap forensics (`forensics.py`); TruFor evidence on demand (`trufor.py`) |
+| D2 | AI-generated document forgery | Ed25519 signed QR (`qr_sign.py`; optional AES-256-GCM encrypted variant `TID3` so a scan reveals nothing), Verhoeff/PAN checks, date gate, OCR, cheap forensics (`forensics.py`); TruFor evidence on demand (`trufor.py`) |
 | D3 | Behaviour across applications | `modules/behavior` + `correlation/history.py` (velocity windows, sequential emails, keystroke-rhythm links, IsolationForest) |
 | D4 | Biometrics | `modules/biometric` (InsightFace ArcFace, threshold at FAR 0.1%, face reuse, server-issued and server-verified head-turn challenge in `liveness_sessions.py`, virtual-camera hint, media reuse), `frontend/lib/liveness.ts` (MediaPipe guidance only) |
 | D5 | Adversarial robustness | `eval/run_attacks.py`, `eval/adaptive_attacker.py`, live attack endpoint `/api/attack/live`, Attack Lab page |

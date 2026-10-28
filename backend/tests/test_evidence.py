@@ -101,3 +101,15 @@ def test_llm_guardrail_checks_every_code_not_just_single_brackets():
     assert cites_only("The card was edited [DOC_QR_OCR_MISMATCH].", {"DOC_QR_OCR_MISMATCH"})
     assert not cites_only("Edited [DOC_QR_OCR_MISMATCH, BIO_MADE_UP]", {"DOC_QR_OCR_MISMATCH"})  # multi-code bracket
     assert not cites_only("Looks fine to me.", {"DOC_QR_OCR_MISMATCH"})  # must cite something
+
+
+def test_encrypted_qr_roundtrip_and_tamper():
+    import base64
+    from app.modules.document import qr_sign as Q
+    fields = {"n": "ASHA NAIK", "d": "01/01/1990", "g": "F", "id": "234567890123", "i": "05/06/2012"}
+    text = Q.make_qr_text(fields, encrypt=True)
+    assert text.startswith("TID3|") and "ASHA" not in text and "234567890123" not in text
+    payload, st = Q.parse_and_verify(text)
+    assert st == Q.VALID and payload["id"] == "234567890123"
+    raw = bytearray(base64.urlsafe_b64decode(text[5:])); raw[20] ^= 1
+    assert Q.parse_and_verify("TID3|" + base64.urlsafe_b64encode(bytes(raw)).decode())[1] == Q.INVALID_SIG

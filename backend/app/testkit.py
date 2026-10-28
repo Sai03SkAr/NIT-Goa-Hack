@@ -42,10 +42,12 @@ def _fresh_people(n: int, hist, rng) -> list[list]:
     for d in dirs:
         photos = sorted(d.glob("*.jpg"))[:6]
         embs = [e["emb"] for e in (embed(cv2.imread(str(p))) for p in photos[:2]) if e is not None]
-        if len(embs) < 2 or _frame_plan(photos) is None:
+        if len(embs) < 2:
             continue
         limit = 0.8 * reuse_threshold()
-        if all((K @ e).max(initial=-1) < limit and all(float(e @ c) < limit for c in chosen) for e in embs):
+        # cheap "never seen" check first; the head-turn frame plan runs a dozen face detections
+        if all((K @ e).max(initial=-1) < limit and all(float(e @ c) < limit for c in chosen) for e in embs) \
+                and _frame_plan(photos) is not None:
             out.append(photos); chosen.extend(embs)
             if len(out) == n:
                 return out
@@ -109,14 +111,15 @@ def _fields(p):
     return {k: p[k] for k in ("name", "dob", "gender", "id_number", "issue_date")}
 
 
-def build_testkit(hist) -> dict:
+def build_testkit(hist, encrypted: int = 0) -> dict:
+    """encrypted=N: instead of the scenario set, N genuine people whose card QR is signed AND encrypted (TID3)."""
     tag = uuid.uuid4().hex[:6]
     rng = random.Random(tag)
     out_dir = GEN / "testkit" / tag
     out_dir.mkdir(parents=True, exist_ok=True)
     reg = mocks.db()
     today = date.today()
-    people = _fresh_people(21, hist, rng)
+    people = _fresh_people(encrypted or 21, hist, rng)
     pool = iter(people)
 
     def digits(n):
@@ -158,6 +161,13 @@ def build_testkit(hist) -> dict:
 
     scenarios = []
 
+    def _finish():
+        (GEN / "registry.json").write_text(json.dumps(reg))  # survive backend restarts
+        kit = {"tag": tag, "folder": str(out_dir), "scenarios": scenarios}
+        (out_dir / "kit.json").write_text(json.dumps(kit, indent=1))
+        (out_dir / "MANUAL.md").write_text(manual_sheet(kit))
+        return kit
+
     def add(sid, title, expect, why, p_form, card_img, selfie_path, signals="human", live="live", camera="FaceTime HD Camera",
             device=None, manual=True, frames_of=None):
         """live: 'live' (fixture frames that really turn), 'still' (no head turn), 'replay' (one still copied)."""
@@ -172,6 +182,16 @@ def build_testkit(hist) -> dict:
 
     def genuine_card(p):
         return C.render(_fields(p), _crop(p["photos"][0]), make_qr_text(_payload(_fields(p))))
+
+    if encrypted:
+        for k in range(encrypted):
+            p = person()
+            card = C.render(_fields(p), _crop(p["photos"][0]), make_qr_text(_payload(_fields(p)), encrypt=True))
+            add(f"enc_{k + 1:02d}", f"Genuine applicant {k + 1}, encrypted QR", ["APPROVE"],
+                "Registry citizen with a card whose QR is signed and AES-encrypted: a phone scan shows only ciphertext; "
+                "the server decrypts it, verifies the issuer signature and compares it with the card and the form.",
+                form(p), card, p["photos"][1], frames_of=p["photos"])
+        return _finish()
 
     # --- should be APPROVED
     p = person()
@@ -252,11 +272,7 @@ def build_testkit(hist) -> dict:
             "Members 1 and 2 pass; from the third, the device pattern holds the case for a human (never an automatic reject).",
             form(m), genuine_card(m), m["photos"][1], device=mule_dev, manual=False, frames_of=m["photos"])
 
-    (GEN / "registry.json").write_text(json.dumps(reg))  # survive backend restarts
-    kit = {"tag": tag, "folder": str(out_dir), "scenarios": scenarios}
-    (out_dir / "kit.json").write_text(json.dumps(kit, indent=1))
-    (out_dir / "MANUAL.md").write_text(manual_sheet(kit))
-    return kit
+    return _finish()
 
 
 def manual_sheet(kit: dict) -> str:

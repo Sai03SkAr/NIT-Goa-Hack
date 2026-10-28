@@ -45,6 +45,10 @@ report says so.
 | 12 Ring members 1-3 | REJECT | Members 2-3 show `BEH_EMAIL_SEQUENCE`, `BEH_KEYSTROKE_LINK`, `BIO_FACE_REUSED` |
 | 13 Recruited account holders 1-3 (one phone) | APPROVE, APPROVE, REVIEW | Genuine people; the third shows `COR_MULE_HERDING`, pattern "Possible mule recruitment" |
 
+**Encrypted-QR people:** `.venv/bin/python scripts/run_tests.py --encrypted 10` builds 10 genuine people whose card
+QR is signed **and** AES-256-GCM encrypted (`TID3`), then runs them through the same flow. **Proper:** `10/10 passed`,
+all APPROVE. Scanning one of those cards with a phone shows only `TID3|...` ciphertext: no name, date or ID.
+
 **Not proper:** any `FAIL` line. The worst failures are a genuine applicant (01/02) getting REJECT, or any fraud
 scenario getting APPROVE. Exit code 1 means at least one failed.
 

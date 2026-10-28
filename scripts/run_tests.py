@@ -5,7 +5,7 @@ job, and checks the decision against the expectation.
 Liveness is answered with FIXTURE PHOTOS of the same person (frontal, turned, mirrored), verified server-side like
 webcam frames. This exercises the real protocol; it is not a live camera session.
 
-Run (backend must be up):  .venv/bin/python scripts/run_tests.py
+Run (backend must be up):  .venv/bin/python scripts/run_tests.py   [--encrypted 10: genuine people with encrypted QR cards]
 Analyst key: TRUEID_ANALYST_KEY or backend/.secrets/analyst_key.
 Writes a report to data/generated/testkit/<tag>/REPORT.md. Exit code 1 if any scenario fails."""
 import json
@@ -87,7 +87,8 @@ def main() -> int:
             return 2
         c.post(API + "/api/auth/login", json={"key": analyst_key()}).raise_for_status()
         consent_version = c.post(API + "/api/session").json()["consent_version"]
-        kit = c.post(API + "/api/testkit", timeout=1200).json()  # finds unseen faces with usable head turns: minutes on CPU
+        enc = int(sys.argv[sys.argv.index("--encrypted") + 1]) if "--encrypted" in sys.argv else 0
+        kit = c.post(API + "/api/testkit", params={"encrypted": enc}, timeout=1200).json()  # finds unseen faces with usable head turns: minutes on CPU
         print(f"Test kit {kit['tag']}: {len(kit['scenarios'])} scenarios -> {kit['folder']}\n")
         rows, failed = [], 0
         for s in kit["scenarios"]:
