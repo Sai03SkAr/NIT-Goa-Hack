@@ -1,6 +1,7 @@
 """LangGraph StateGraph: ingest -> {document, biometric, behavior, registry} in parallel -> correlation -> fusion
 -> router (REVIEW & not stepped up -> step_up -> fusion) -> decide -> explain -> persist.
 No LLM in the decision path: 'explain' runs after the decision is fixed."""
+import json
 import math
 import operator
 import threading
@@ -11,6 +12,7 @@ import numpy as np
 from langgraph.graph import END, START, StateGraph
 
 from app import db
+from app.config import LIVE_HISTORY
 from app.fusion import fraud_type, model
 from app.llm.summary import summarize
 from app.modules.behavior import agent as beh
@@ -88,6 +90,10 @@ def correlation_node(s: State):
     rec = History.record(s["app"], emb)
     with Runtime.lock:
         r = cor.assess(rec, Runtime.hist, commit=True)
+        a = s["app"]
+        with open(LIVE_HISTORY, "a") as fh:  # the graph is in memory; this log lets a restart rebuild it
+            fh.write(json.dumps({"app": {k: a[k] for k in ("app_id", "ts", "form", "device", "telemetry")},
+                                 "emb": None if emb is None else [float(x) for x in emb]}) + "\n")
     return {"modules": {"correlation": r.model_dump()}, "rec": {"app_id": rec["app_id"]}}
 
 

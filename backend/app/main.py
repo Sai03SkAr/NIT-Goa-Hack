@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app import db
-from app.config import BANDS, GEN, PRE, UPLOADS
+from app.config import BANDS, GEN, LIVE_HISTORY, PRE, UPLOADS
 from app.graph import pipeline as P
 from app.modules.biometric.face import reuse_threshold, threshold
 from app.modules.correlation.history import STRONG, History
@@ -65,6 +65,10 @@ def load_history() -> History:
             s = pickle.loads(ext.read_bytes())["bio"]["selfie"]
             emb = s["emb"] if s else None
         h.add(History.record(a, emb))
+    if LIVE_HISTORY.exists():
+        for line in LIVE_HISTORY.read_text().splitlines():
+            r = json.loads(line)
+            h.add(History.record(r["app"], None if r["emb"] is None else np.asarray(r["emb"], np.float32)))
     return h
 
 
@@ -324,6 +328,16 @@ def attack_live(req: LiveAttack):
                       "qr_valid": r.evidence["qr_signature_valid"], "ocr": r.evidence["ocr"], "qr": r.evidence["qr"]}
     return P.jsonable({"before": pick(before), "after": pick(after), "truth": a["fraud_type"],
                        "image": "data:image/jpeg;base64," + base64.b64encode(enc.tobytes()).decode()})
+
+
+class Ask(BaseModel):
+    question: str
+
+
+@app.post("/api/chat")
+def chat(q: Ask):
+    from app.llm.investigator import answer
+    return P.jsonable(answer(q.question[:1000], P.Runtime.hist))
 
 
 @app.get("/api/health")

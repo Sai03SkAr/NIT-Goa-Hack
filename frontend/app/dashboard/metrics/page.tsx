@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Section, Stat, TYPE_COLORS, pct } from "@/components/ui";
 import { get, post } from "@/lib/api";
 
@@ -97,6 +97,25 @@ export default function Metrics() {
           </table>
         </Section>
       </div>
+
+      {m.cost_curve && (
+        <Section title={`Cost curve: choosing the APPROVE cut-off (missed fraud = ${m.cost_curve.fn_cost}× a false alarm)`}
+          right={<span className="text-xs text-dim">chosen on the {m.cost_curve.chosen_on}; hard-rule cases always flagged</span>}>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={m.cost_curve.points}>
+              <CartesianGrid stroke="#1e293b" />
+              <XAxis dataKey="t" stroke="#8b9ab3" fontSize={11} />
+              <YAxis stroke="#5b6a84" fontSize={11} />
+              <Tooltip {...TT} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <ReferenceLine x={m.cost_curve.recommended_approve_below} stroke="#5eead4" strokeDasharray="4 4" />
+              <Line dataKey="cost_cal" name="Cost · calibration split" stroke="#22d3ee" dot={false} strokeWidth={2} />
+              <Line dataKey="cost_test" name="Cost · test split" stroke="#fbbf24" dot={false} strokeWidth={2} />
+            </LineChart>
+          </ResponsiveContainer>
+          <p className="mt-2 text-xs text-dim">Recommended APPROVE cut-off {m.cost_curve.recommended_approve_below} (current {m.cost_curve.current_approve_below}); test cost {m.cost_curve.test_cost_recommended} vs {m.cost_curve.test_cost_current} at the current setting.</p>
+        </Section>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="Hard negatives: genuine people who look odd" right={<span className="text-xs text-dim">false-flag rate by subgroup</span>}>

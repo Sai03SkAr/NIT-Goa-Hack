@@ -63,6 +63,27 @@ def topk_recall(y, s, frac):
     return float(y[idx].sum() / max(y.sum(), 1))
 
 
+FN_COST, FP_COST = 10, 1  # a missed fraud costs ~10x a false alarm (plan 4.6)
+
+
+def cost_curve(ca, p_ca, te, s_te):
+    """Choose the APPROVE cut-off on the calibration split (never on test), report its cost on test."""
+    s_ca, _ = final_scores(ca, p_ca)
+    y_ca, y_te = ca.label.values, te.label.values
+    forced = lambda df: np.array([hard_rules(r.to_dict())[0] is not None for _, r in df.iterrows()])
+    f_ca, f_te = forced(ca), forced(te)  # hard-rule cases are flagged whatever the cut-off
+
+    def cost(y, s, f, t):
+        flag = f | (s >= t)
+        return int(FN_COST * (~flag & (y == 1)).sum() + FP_COST * (flag & (y == 0)).sum())
+    grid = np.round(np.linspace(0.02, 0.9, 45), 2)
+    pts = [{"t": float(t), "cost_cal": cost(y_ca, s_ca, f_ca, t), "cost_test": cost(y_te, s_te, f_te, t)} for t in grid]
+    best = min(pts, key=lambda p: (p["cost_cal"], abs(p["t"] - BANDS["approve_below"])))
+    return {"fn_cost": FN_COST, "fp_cost": FP_COST, "points": pts, "chosen_on": "calibration split (days 16-19)",
+            "recommended_approve_below": best["t"], "current_approve_below": BANDS["approve_below"],
+            "test_cost_recommended": best["cost_test"], "test_cost_current": cost(y_te, s_te, f_te, BANDS["approve_below"])}
+
+
 def metrics(y, s, bands, df):
     flag = np.array([b != "APPROVE" for b in bands]).astype(int)
     rej = np.array([b == "REJECT" for b in bands]).astype(int)
@@ -98,6 +119,7 @@ def main():
     p_te = iso.predict(proba(m, te, feats))
     s_te, bands = final_scores(te, p_te)
     res = metrics(te.label.values, s_te, bands, te)
+    res["cost_curve"] = cost_curve(ca, iso.predict(proba(m, ca, feats)), te, s_te)
 
     gain = m.get_booster().get_score(importance_type="gain")
     top = sorted(((feats[int(k[1:])] if k.startswith("f") and k[1:].isdigit() else k, v) for k, v in gain.items()),

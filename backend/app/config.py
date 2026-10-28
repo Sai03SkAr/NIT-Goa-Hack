@@ -8,6 +8,7 @@ MODELS = ROOT / "models"
 PRE = ROOT / "precomputed"
 DB_PATH = ROOT / "backend" / "trueid.db"
 UPLOADS = ROOT / "backend" / "uploads"
+LIVE_HISTORY = ROOT / "backend" / "live_history.jsonl"  # graph records of live applicants, replayed on startup
 
 for p in (GEN, KEYS, MODELS, PRE, UPLOADS):
     p.mkdir(parents=True, exist_ok=True)

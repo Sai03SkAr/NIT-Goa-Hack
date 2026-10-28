@@ -66,6 +66,8 @@ def build_kit(photo_bgr) -> dict:
     new_phone = "70" + "".join(random.choice(string.digits) for _ in range(8))
     reg["telecom"][new_phone] = {"activated": (date.today() - timedelta(days=3)).strftime("%d/%m/%Y"), "subscriber": victim["name"]}
 
+    (GEN / "registry.json").write_text(json.dumps(reg))  # keep the enrolment across backend restarts
+
     url = lambda p: f"/files/demo/{p}"
     return {
         "genuine": {"card": url(f"genuine_{tag}.jpg"), "form": me},

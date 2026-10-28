@@ -2,7 +2,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, FlaskConical, GitBranch, LayoutList, ShieldCheck, UserPlus } from "lucide-react";
+import { Activity, FlaskConical, GitBranch, LayoutList, MessageSquareText, ShieldCheck, UserPlus } from "lucide-react";
 import type { Band } from "@/lib/api";
 
 export const bandColor: Record<string, string> = { APPROVE: "var(--approve)", REVIEW: "var(--review)", REJECT: "var(--reject)" };
@@ -73,6 +73,7 @@ const NAV = [
   { href: "/dashboard/graph", label: "Identity graph", icon: GitBranch },
   { href: "/dashboard/metrics", label: "Metrics", icon: Activity },
   { href: "/dashboard/attack-lab", label: "Attack Lab", icon: FlaskConical },
+  { href: "/dashboard/chat", label: "Investigator", icon: MessageSquareText },
 ];
 
 export function AnalystShell({ children }: { children: React.ReactNode }) {

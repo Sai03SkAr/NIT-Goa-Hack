@@ -6,15 +6,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import db  # noqa: E402
-from app.config import DB_PATH, GEN, PRE  # noqa: E402
+from app.config import DB_PATH, GEN, LIVE_HISTORY, PRE  # noqa: E402
 from app.fusion import fraud_type, model  # noqa: E402
 from app.graph.pipeline import jsonable  # noqa: E402
 from app.llm.summary import template  # noqa: E402
 
 
 def main():
-    if DB_PATH.exists():
-        DB_PATH.unlink()
+    for stale in (DB_PATH, LIVE_HISTORY):  # a fresh seed starts with no live applicants
+        if stale.exists():
+            stale.unlink()
     db.init()
     apps = {a["app_id"]: a for a in json.loads((GEN / "population.json").read_text())}
     with db.session() as s, open(PRE / "modules.jsonl") as fh:
