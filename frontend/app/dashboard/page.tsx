@@ -7,7 +7,7 @@ import { BandBadge, PageHeader, RiskBar, Stat, TypeChip, pct } from "@/component
 import { type AppRow, get } from "@/lib/api";
 
 const BANDS = ["ALL", "REJECT", "REVIEW", "APPROVE"] as const;
-const TYPES = ["all", "ring", "first_party", "third_party", "bot", "tampered", "injection"];
+const TYPES = ["all", "ring", "first_party", "third_party", "bot", "tampered", "injection", "incomplete"];
 
 export default function Queue() {
   const [rows, setRows] = useState<AppRow[]>([]);

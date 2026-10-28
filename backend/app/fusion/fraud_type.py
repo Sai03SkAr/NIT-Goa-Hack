@@ -7,6 +7,7 @@ ACTIONS = {
     "bot": ("Bot / scripted", "Block device, step-up challenge"),
     "tampered": ("Tampered document", "Reject document, request re-upload through DigiLocker"),
     "injection": ("Injection / replay", "Assisted video KYC"),
+    "incomplete": ("Verification incomplete", "Run a live selfie (liveness) check before granting full access"),
     "none": ("No fraud pattern", "Proceed"),
 }
 
@@ -35,6 +36,8 @@ def classify(f: dict) -> str:
         return "tampered"
     if g("reg_sim_age_days", 999) < 30 and g("reg_ckyc", 1) == 0:
         return "third_party"
+    if g("bio_liveness_performed", 1) == 0:
+        return "incomplete"
     return "none"
 
 

@@ -20,6 +20,7 @@ REASONS: dict[str, str] = {
     "BIO_REGISTRY_FACE_MISMATCH": "Selfie does not match the issuer's registry photo",
     "BIO_FACE_REUSED": "This face already applied under a different name",
     "BIO_LIVENESS_FAIL": "Active liveness challenge failed",
+    "BIO_LIVENESS_NOT_PERFORMED": "No live selfie check was run; the selfie is an uploaded photo",
     "BIO_VIRTUAL_CAMERA": "A virtual camera (injection tool) was detected",
     "BIO_FRAMES_INCONSISTENT": "Liveness frames are not one live person turning their head",
     "BIO_SCREEN_REPLAY": "Selfie looks like a screen/photo replay (blur/moire)",

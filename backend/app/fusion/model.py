@@ -47,6 +47,7 @@ def hard_rules(feats: dict) -> tuple[str | None, list[str]]:
     if card_miss: rev.append("BIO_CARD_FACE_MISMATCH")
     if reg_miss: rev.append("BIO_REGISTRY_FACE_MISMATCH")
     if feats.get("bio_liveness_pass") == 0: rev.append("BIO_LIVENESS_FAIL")
+    if feats.get("bio_liveness_performed") == 0: rev.append("BIO_LIVENESS_NOT_PERFORMED")  # missing evidence: never auto-approve
     if rej:
         return "REJECT", rej
     if rev:

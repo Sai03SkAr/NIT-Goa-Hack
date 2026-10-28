@@ -24,6 +24,11 @@ cd frontend && npm run dev        # http://localhost:3000
 
 Optional: `export GEMINI_API_KEY=...` before starting the backend for LLM summaries (a deterministic template is used otherwise).
 
+## Partner client sites (TrueID as a backend)
+Two fictional partners run their own KYC forms and send the evidence to TrueID's partner API:
+**Northstar Bank** (full KYC, no gaps, port 3001) and **PayLite Wallet** (minimum KYC with deliberate gaps, port 3002).
+Each has an operations console showing TrueID's verdicts. See **[clients/README.md](clients/README.md)**.
+
 ## Testing
 See **[docs/TESTING.md](docs/TESTING.md)**. Quick check: `.venv/bin/python scripts/run_tests.py` → `14/14 passed`.
 

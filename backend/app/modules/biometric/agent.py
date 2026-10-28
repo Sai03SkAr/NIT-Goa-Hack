@@ -69,13 +69,19 @@ def assess(ext: dict, registry_emb, liveness: dict, camera_labels: list[str], re
     # judge the camera actually streaming; an installed-but-unused OBS is not an injection
     vc = bool(liveness.get("virtual_camera")) or virtual_camera([active_camera] if active_camera else camera_labels)
     f["bio_virtual_cam"] = float(vc)
-    f["bio_liveness_pass"] = float(bool(liveness.get("passed")))
-    f["bio_frames_consistent"] = float(bool(liveness.get("frames_consistent", True)))
+    # A partner on minimum KYC may never run a live check. That is missing evidence (NaN to the model, REVIEW floor
+    # in hard_rules), not a failed challenge, so it must not be scored or labelled as an injection attempt.
+    performed = liveness.get("performed", True) is not False
+    f["bio_liveness_performed"] = float(performed)
+    f["bio_liveness_pass"] = float(bool(liveness.get("passed"))) if performed else float("nan")
+    f["bio_frames_consistent"] = float(bool(liveness.get("frames_consistent", True))) if performed else float("nan")
     if vc:
         R.append(reason("BIO_VIRTUAL_CAMERA", 0.6))
-    if not liveness.get("passed"):
+    if not performed:
+        R.append(reason("BIO_LIVENESS_NOT_PERFORMED", 0.25))
+    elif not liveness.get("passed"):
         R.append(reason("BIO_LIVENESS_FAIL", 0.5))
-    if not liveness.get("frames_consistent", True):
+    if performed and not liveness.get("frames_consistent", True):
         R.append(reason("BIO_FRAMES_INCONSISTENT", 0.4))
 
     p = ext["passive"]
@@ -83,7 +89,7 @@ def assess(ext: dict, registry_emb, liveness: dict, camera_labels: list[str], re
     if p["moire"] > 160:  # genuine-selfie p99 on the train split; blur didn't separate replay from genuine
         R.append(reason("BIO_SCREEN_REPLAY", 0.2))
 
-    hard = 1.0 if (vc or not liveness.get("passed")) else 0.0
+    hard = 1.0 if (vc or (performed and not liveness.get("passed"))) else 0.0
     s = 0.0
     for v, w in ((f["bio_sim_card"], .3), (f["bio_sim_registry"], .45)):
         s += w * (1.0 if np.isnan(v) else float(np.clip((thr + 0.15 - v) / 0.3, 0, 1)))

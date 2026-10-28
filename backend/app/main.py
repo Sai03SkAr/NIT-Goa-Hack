@@ -25,6 +25,7 @@ from app.modules.biometric.face import reuse_threshold, threshold
 from app.modules.correlation.history import STRONG, History
 from app.modules.document import forensics
 from app.modules.registry import mocks
+from app import partners
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -41,6 +42,7 @@ app = FastAPI(title="TrueID Shield", version="1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
                    allow_methods=["*"], allow_headers=["*"])
 app.include_router(mocks.router)
+app.include_router(partners.router)
 app.mount("/files", StaticFiles(directory=GEN), name="files")
 app.mount("/uploads", StaticFiles(directory=UPLOADS), name="uploads")
 
@@ -89,6 +91,7 @@ def run_job(app_id: str, state: dict):
                 q.put(P.jsonable(P.node_event(node, u or {})))
     except Exception as e:  # surface pipeline errors to the progress UI instead of hanging it
         q.put({"node": "error", "error": str(e)})
+        partners.FAILED[app_id] = str(e)
     q.put(None)
 
 
@@ -101,22 +104,31 @@ async def apply(payload: str = Form(...), card: UploadFile = File(...), selfie: 
     for k in ("name", "dob", "gender", "id_number", "phone", "email"):
         if not data.get("form", {}).get(k):
             raise HTTPException(422, f"form.{k} required")
-    app_id = "L" + uuid.uuid4().hex[:8].upper()
-    card_raw, selfie_raw = await card.read(), await selfie.read()
+    app_id = start_job(data, await card.read(), await selfie.read(), [await f.read() for f in frames])
+    return {"app_id": app_id}
+
+
+DEFAULT_TELEMETRY = {"field_times": [], "fill_time": 60, "iki_mean": 180, "iki_std": 60, "paste_fields": 0,
+                     "corrections": 2, "blur_count": 0, "mouse_entropy": 3.0, "keystroke_vec": [0.0] * 12}
+
+
+def start_job(data: dict, card_raw: bytes, selfie_raw: bytes, frame_raws: list[bytes], prefix: str = "L",
+              extra: dict | None = None) -> str:
+    """Shared by the in-house /kyc flow and the partner API: store the evidence, queue the pipeline, return the id."""
+    app_id = prefix + uuid.uuid4().hex[:8].upper()
+    card_bgr, selfie_bgr = _decode(card_raw), _decode(selfie_raw)
+    frame_imgs = [_decode(b) for b in frame_raws]
     (UPLOADS / f"{app_id}_card.jpg").write_bytes(card_raw)
     (UPLOADS / f"{app_id}_selfie.jpg").write_bytes(selfie_raw)
-    frame_imgs = [_decode(await f.read()) for f in frames]
-    tele = {"field_times": [], "fill_time": 60, "iki_mean": 180, "iki_std": 60, "paste_fields": 0, "corrections": 2,
-            "blur_count": 0, "mouse_entropy": 3.0, "keystroke_vec": [0.0] * 12} | data.get("telemetry", {})
+    tele = DEFAULT_TELEMETRY | (data.get("telemetry") or {})
     a = {"app_id": app_id, "ts": datetime.now().isoformat(timespec="seconds"), "source": data.get("source", "live"),
          "form": data["form"], "device": data.get("device", {}), "telemetry": tele,
          "liveness": data.get("liveness", {"passed": False}),
-         "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg"}
+         "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg"} | (extra or {})
     JOBS[app_id] = queue.Queue()
-    state = {"app": a, "card_bgr": _decode(card_raw), "card_raw": card_raw, "selfie_bgr": _decode(selfie_raw),
-             "frames": frame_imgs}
+    state = {"app": a, "card_bgr": card_bgr, "card_raw": card_raw, "selfie_bgr": selfie_bgr, "frames": frame_imgs}
     threading.Thread(target=run_job, args=(app_id, state), daemon=True).start()
-    return {"app_id": app_id}
+    return app_id
 
 
 @app.get("/api/apply/{app_id}/events")

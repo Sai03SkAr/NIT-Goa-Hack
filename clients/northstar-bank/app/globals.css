@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* Northstar: cool paper, spruce ink, a single brass accent reserved for the star mark and focus. */
+@theme {
+  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-paper: #f2f5f4;
+  --color-surface: #ffffff;
+  --color-ink: #13201d;
+  --color-muted: #5b6b67;
+  --color-faint: #8a9894;
+  --color-line: #d8e0dd;
+  --color-spruce: #1d4d45;
+  --color-spruce-2: #2a6a5f;
+  --color-mist: #e3ecea;
+  --color-brass: #a8823a;
+  --color-ok: #2e7d57;
+  --color-warn: #a86a12;
+  --color-err: #b3261e;
+}
+
+html { -webkit-font-smoothing: antialiased; }
+body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-sans); font-feature-settings: "ss01", "tnum"; }
+
+:focus-visible { outline: 2px solid var(--color-brass); outline-offset: 2px; border-radius: 6px; }
+
+@layer components {
+  .field { display: block; }
+  .field-label { display: block; font-size: 0.875rem; font-weight: 550; margin-bottom: 0.375rem; }
+  .field-hint { display: block; font-size: 0.8125rem; color: var(--color-muted); margin-top: 0.375rem; }
+  .input {
+    width: 100%; border: 1px solid var(--color-line); background: var(--color-surface); border-radius: 10px;
+    padding: 0.7rem 0.85rem; font-size: 1rem; transition: border-color .15s, box-shadow .15s;
+  }
+  .input:focus { outline: none; border-color: var(--color-spruce); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-spruce) 18%, transparent); }
+  .input[readonly] { background: var(--color-mist); color: var(--color-ink); }
+  .input.mono { font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 10px;
+    padding: 0.75rem 1.25rem; font-weight: 600; font-size: 0.95rem; border: 1px solid var(--color-line);
+    background: var(--color-surface); color: var(--color-ink); transition: background .15s, border-color .15s;
+  }
+  .btn:hover { border-color: var(--color-faint); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: var(--color-spruce); border-color: var(--color-spruce); color: #fff; }
+  .btn-primary:hover { background: var(--color-spruce-2); border-color: var(--color-spruce-2); }
+  .card { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 16px; }
+  .error { color: var(--color-err); font-size: 0.875rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .step-enter { animation: step-in .28s ease-out both; }
+  @keyframes step-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+}
