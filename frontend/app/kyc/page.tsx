@@ -2,7 +2,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
-import { Camera, Check, ChevronRight, FileUp, Lock, ScanFace, ShieldCheck, Sparkles, Upload, UserRound, Wand2 } from "lucide-react";
+import { Camera, Check, ChevronRight, Lock, ShieldCheck, Sparkles, Upload, Wand2 } from "lucide-react";
 import { Logo } from "@/components/ui";
 import { fileUrl, post } from "@/lib/api";
 import { Telemetry } from "@/lib/telemetry";
@@ -11,7 +11,7 @@ import { CHALLENGE_TEXT, type Challenge, getLandmarker, grabFrame, pickChallenge
 
 type Form = { name: string; dob: string; gender: string; id_number: string; pan: string; phone: string; email: string; address: string; pincode: string };
 const EMPTY: Form = { name: "", dob: "", gender: "M", id_number: "", pan: "", phone: "", email: "", address: "", pincode: "" };
-const STEPS = ["Consent", "Your details", "ID document", "Selfie & liveness"];
+const STEPS = ["Consent", "Your details", "ID card", "Face check"];
 
 export default function Page() {
   return <Suspense><Wizard /></Suspense>;
@@ -47,17 +47,17 @@ function Wizard() {
   }
 
   return (
-    <div className="grid-bg min-h-screen">
+    <div className="min-h-[100dvh]">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
         <Logo />
-        <span className="chip"><Lock className="size-3" />Encrypted · DPDP Act 2023 consent</span>
+        <span className="flex items-center gap-1.5 text-sm text-dim"><Lock className="size-3.5" />Secure connection</span>
       </header>
       <main className="mx-auto max-w-5xl px-6 pb-20">
         <ol className="mb-8 flex flex-wrap items-center gap-2">
           {STEPS.map((s, i) => (
             <li key={s} className="flex items-center gap-2">
               <span className={clsx("grid size-7 place-items-center rounded-full border text-xs font-semibold transition",
-                i < step ? "border-brand bg-brand text-[#04201d]" : i === step ? "border-brand text-brand" : "border-line-2 text-dim")}>
+                i < step ? "border-brand bg-brand text-white" : i === step ? "border-brand text-brand" : "border-line-2 text-dim")}>
                 {i < step ? <Check className="size-3.5" /> : i + 1}
               </span>
               <span className={clsx("text-sm", i === step ? "text-fg" : "text-dim")}>{s}</span>
@@ -85,7 +85,7 @@ function Consent({ onNext }: { onNext: () => void }) {
   return (
     <div className="panel max-w-3xl p-8">
       <ShieldCheck className="size-8 text-brand" />
-      <h1 className="mt-4 text-2xl font-semibold">Verify your identity</h1>
+      <h1 className="mt-4 text-2xl font-semibold tracking-tight">Verify your identity</h1>
       <p className="mt-2 text-muted">Takes about 2 minutes. We'll check your ID card, take a short selfie with a liveness challenge and confirm your details with the issuing registries.</p>
       <ul className="mt-6 space-y-3 text-sm text-muted">
         {["ID numbers are stored as salted hashes and shown masked (last 4 digits only).",
@@ -96,7 +96,7 @@ function Consent({ onNext }: { onNext: () => void }) {
         ))}
       </ul>
       <label className="mt-6 flex cursor-pointer items-center gap-3 text-sm">
-        <input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} className="size-4 accent-[#5eead4]" />
+        <input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} className="size-4 accent-brand" />
         I consent to identity verification under the DPDP Act, 2023.
       </label>
       <button className="btn btn-primary mt-6" disabled={!ok} onClick={onNext}>Continue <ChevronRight className="size-4" /></button>
@@ -126,7 +126,8 @@ function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form
   const valid = missing.length === 0;
   return (
     <div className="panel p-8">
-      <div className="flex items-center gap-3"><UserRound className="size-5 text-brand" /><h2 className="text-xl font-semibold">Your details</h2></div>
+      <h2 className="text-xl font-semibold tracking-tight">Your details</h2>
+      <p className="mt-1 text-sm text-muted">Enter them exactly as they appear on your ID card.</p>
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         {FIELDS.map(({ k, label, ph, span, mono }) => (
           <label key={k} className={clsx("block", span === 2 && "md:col-span-2")}>
@@ -161,7 +162,7 @@ function DocStep({ card, setCard, onBack, onNext }: { card: File | null; setCard
   const url = useMemo(() => (card ? URL.createObjectURL(card) : ""), [card]);
   return (
     <div className="panel p-8">
-      <div className="flex items-center gap-3"><FileUp className="size-5 text-brand" /><h2 className="text-xl font-semibold">Upload your National ID card</h2></div>
+      <h2 className="text-xl font-semibold tracking-tight">Upload your National ID card</h2>
       <p className="mt-2 text-sm text-muted">Front side, flat and fully visible. The signed QR code must be readable.</p>
       <label className={clsx("mt-6 grid cursor-pointer place-items-center overflow-hidden rounded-xl border border-dashed border-line-2 bg-bg-2/60 transition hover:border-brand",
         card ? "p-3" : "h-64")}>
@@ -246,7 +247,7 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
   return (
     <div className="grid gap-6 md:grid-cols-[1.3fr_1fr]">
       <div className="panel overflow-hidden p-3">
-        <div className={clsx("relative aspect-[4/3] overflow-hidden rounded-xl bg-black", state === "challenge" && "scanline")}>
+        <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-[#1b1e24]">
           <video ref={video} muted playsInline className="h-full w-full -scale-x-100 object-cover" />
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <div className={clsx("h-[72%] aspect-[3/4] rounded-[50%] border-2 transition-colors",
@@ -255,8 +256,8 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
           {state === "idle" && <div className="absolute inset-0 grid place-items-center"><button className="btn btn-primary" onClick={start}><Camera className="size-4" />Enable camera</button></div>}
           {state === "loading" && <div className="absolute inset-0 grid place-items-center text-sm text-muted">Loading face model…</div>}
           {state === "challenge" && current && (
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-5">
-              <div className="label text-brand">Challenge {idx + 1} of {chs.length} · {left}s</div>
+            <div className="absolute inset-x-0 bottom-0 bg-black/70 px-5 py-4 text-white">
+              <div className="text-sm text-white/80">Step {idx + 1} of {chs.length}, {left} seconds left</div>
               <div className="mt-1 text-xl font-semibold">{CHALLENGE_TEXT[current]}</div>
               {hint && <div className="mt-1 text-sm text-review">{hint}</div>}
             </div>
@@ -264,7 +265,7 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
         </div>
       </div>
       <div className="panel flex flex-col p-6">
-        <div className="flex items-center gap-3"><ScanFace className="size-5 text-brand" /><h2 className="text-xl font-semibold">Selfie & liveness</h2></div>
+        <h2 className="text-xl font-semibold tracking-tight">Face check</h2>
         <p className="mt-2 text-sm text-muted">Two random challenges, 8 seconds each. A replayed photo or video can't follow instructions it hasn't seen.</p>
         <div className="mt-5 space-y-2 text-sm">
           <Row ok={state !== "idle" && state !== "loading"} text="Camera on" />

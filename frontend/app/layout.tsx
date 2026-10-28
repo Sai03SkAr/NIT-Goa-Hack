@@ -7,7 +7,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "TrueID Shield",
-  description: "Synthetic identity fraud detection for automated KYC — multi-source correlation, not single checks.",
+  description: "Synthetic identity fraud detection for automated KYC, multi-source correlation, not single checks.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

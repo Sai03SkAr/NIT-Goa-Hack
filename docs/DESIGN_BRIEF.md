@@ -1,6 +1,8 @@
-# TrueID Shield — UI design brief (for the redesign pass)
+# TrueID Shield: UI design brief
 
-The product works end to end. This brief is for a **visual and UX redesign only**. Please keep every behaviour listed under "Do not break".
+Status: the light theme described here is implemented (tokens in `app/globals.css`, canvas/chart colors in `lib/theme.ts`). Use this brief for further visual work.
+
+The product works end to end. This brief is for **visual and UX work only**. Please keep every behaviour listed under "Do not break".
 
 ## Direction
 - **Light theme.** Calm, trustworthy, institutional: think a bank's internal risk tool or a regulator dashboard, not a crypto or AI landing page.

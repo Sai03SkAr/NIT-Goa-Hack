@@ -40,7 +40,7 @@ export default function Chat() {
             </div>
           )}
           {msgs.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "ml-auto max-w-[80%] rounded-xl bg-white/[0.06] px-4 py-2.5 text-sm" : "max-w-[90%] text-sm leading-relaxed"}>
+            <div key={i} className={m.role === "user" ? "ml-auto max-w-[80%] rounded-xl bg-brand-soft px-4 py-2.5 text-sm" : "max-w-[90%] text-sm leading-relaxed"}>
               <p>{linkIds(m.text)}</p>
               {m.role === "assistant" && m.source && <div className="mt-1 text-[11px] text-dim">answered from {m.source === "llm" ? "LLM over tool results" : "tool results (template)"}</div>}
               {!!m.tools?.length && (

@@ -57,13 +57,14 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
     n === "explain" ? !!evs.decide : n === "persist" ? !!evs.explain : false);
 
   return (
-    <div className="grid-bg min-h-screen">
+    <div className="min-h-[100dvh]">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <Logo /><span className="chip mono">{id} · {done ? "complete" : `${elapsed.toFixed(1)}s`}</span>
       </header>
       <main className="mx-auto grid max-w-6xl gap-6 px-6 pb-20 lg:grid-cols-[1.25fr_1fr]">
         <section className="panel p-6">
-          <div className="label mb-4">LangGraph pipeline · live</div>
+          <h1 className="mb-1 text-lg font-semibold">Checking your application</h1>
+          <p className="mb-5 text-sm text-muted">Each check runs independently; the decision combines all of them.</p>
           <Node n={NODES[0]} ev={evs.ingest} running={running("ingest")} />
           <Connector />
           <div className="grid gap-3 sm:grid-cols-2">
@@ -83,24 +84,24 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
               <>
                 <div className="mt-3 flex items-center gap-4">
                   <BandBadge band={decision.band} size="lg" />
-                  <div className="text-sm text-muted">fraud probability <span className="mono text-fg">{decision.prob?.toFixed(3)}</span></div>
+                  <div className="text-sm text-muted">Model fraud probability <span className="mono text-fg">{decision.prob?.toFixed(3)}</span></div>
                 </div>
                 <RiskBar value={decision.prob ?? 0} className="mt-4" />
-                {decision.forced && <div className="mt-3 text-xs text-muted">Forced by hard rule (deterministic, auditable)</div>}
+                {decision.forced && <div className="mt-3 text-xs text-muted">Set by a fixed rule ({decision.forced === "REJECT" ? "reject" : "review"}), not by the model. Rules are deterministic and auditable.</div>}
                 {evs.decide?.fraud_label && evs.decide.band !== "APPROVE" && (
-                  <div className="mt-5 rounded-xl border border-line-2 bg-bg-2/60 p-4">
+                  <div className="mt-5 rounded-lg border border-line bg-bg-2 p-4">
                     <div className="label">Pattern</div><div className="mt-1 font-semibold">{evs.decide.fraud_label}</div>
                     <div className="label mt-3">Recommended action</div><div className="mt-1 text-sm">{evs.decide.fraud_action}</div>
                   </div>
                 )}
                 {stepped && <div className="mt-4 flex items-center gap-2 text-sm text-muted">Step-up voice score <span className="mono text-fg">{evs.step_up?.step_up?.voice}</span><SimBadge /></div>}
               </>
-            ) : <div className="mt-4 flex items-center gap-2 text-sm text-muted"><CircleDashed className="size-4 animate-spin" />Agents are working…</div>}
+            ) : <div className="mt-4 flex items-center gap-2 text-sm text-muted"><CircleDashed className="size-4 animate-spin" />Running checks</div>}
           </section>
           {evs.explain?.summary && (
             <section className="panel fade-up p-6">
               <div className="flex items-center gap-2"><Sparkles className="size-4 text-brand" /><div className="label">Analyst summary</div></div>
-              <p className="mt-3 text-sm leading-relaxed text-fg/90">{evs.explain.summary}</p>
+              <p className="mt-3 text-sm leading-relaxed text-fg">{evs.explain.summary}</p>
             </section>
           )}
           {evs.error && <section className="panel p-6 text-sm text-reject">Pipeline error: {evs.error.error}</section>}
@@ -120,10 +121,10 @@ function Node({ n, ev, running, compact }: { n: (typeof NODES)[number]; ev?: Ev;
   const risk = ev?.risk;
   return (
     <div className={clsx("rounded-xl border p-3.5 transition-all duration-500",
-      has ? "border-line-2 bg-panel-2/80" : running ? "border-brand/50 bg-brand/5" : "border-line bg-bg-2/40 opacity-60")}>
+      has ? "border-line bg-panel" : running ? "border-brand bg-brand-soft" : "border-line bg-bg-2 text-dim")}>
       <div className="flex items-center gap-3">
-        <span className={clsx("grid size-8 shrink-0 place-items-center rounded-lg", running && "pulse")}
-          style={{ background: has ? `color-mix(in srgb, ${risk != null ? riskColor(risk) : "var(--brand)"} 15%, transparent)` : "rgba(255,255,255,.03)" }}>
+        <span className={clsx("grid size-8 shrink-0 place-items-center rounded-lg", running && "working")}
+          style={{ background: has ? `color-mix(in srgb, ${risk != null ? riskColor(risk) : "var(--brand)"} 10%, var(--panel))` : "var(--panel)" }}>
           <I className="size-4" style={{ color: has ? (risk != null ? riskColor(risk) : "var(--brand)") : "var(--dim)" }} />
         </span>
         <div className="min-w-0 flex-1">

@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Section, Stat, TYPE_COLORS, pct } from "@/components/ui";
 import { get, post } from "@/lib/api";
+import { AXIS, BRAND, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
 
-const TT = { contentStyle: { background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10, fontSize: 12 } };
 
 export default function Metrics() {
   const [d, setD] = useState<any>(null);
@@ -28,7 +28,7 @@ export default function Metrics() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Evaluation</h1>
-        <p className="mt-1 max-w-4xl text-sm text-muted">{m.definition}. Time-based split (train days 0–15, calibrate 16–19, test 20–29), random JPEG/resize/noise on every class, hard negatives (families, hostels, transliteration, new-to-credit) in both train and test. We claim <span className="text-fg">relative</span> gains — see the ablation.</p>
+        <p className="mt-1 max-w-4xl text-sm text-muted">{m.definition}. Time-based split (train days 0-15, calibrate 16-19, test 20-29), random JPEG/resize/noise on every class, hard negatives (families, hostels, transliteration, new-to-credit) in both train and test. We claim <span className="text-fg">relative</span> gains - see the ablation.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -44,22 +44,22 @@ export default function Metrics() {
         <Stat label="FDR @ top 5%" value={pct(m.fdr_at_top5pct)} />
         <Stat label="Reject precision" value={pct(m.reject_precision)} />
         <Stat label="Reject recall" value={pct(m.reject_recall)} />
-        <Stat label="Latency p50" value={`${Math.round(m.latency_ms.p50)} ms`} hint="CPU, all modules" />
-        <Stat label="Latency p95" value={`${Math.round(m.latency_ms.p95)} ms`} />
+        <Stat label="Batch processing p50" value={`${(m.latency_ms.p50 / 1000).toFixed(1)} s`} hint="5 parallel CPU workers; live is ~0.3 s warm" />
+        <Stat label="Batch processing p95" value={`${(m.latency_ms.p95 / 1000).toFixed(1)} s`} hint="OCR + face models, cold" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <Section title="Ablation: each module alone vs fused (ROC-AUC / recall)" right={<span className="text-xs text-dim">the proof of multi-source correlation</span>}>
           <ResponsiveContainer width="100%" height={330}>
             <BarChart data={[...single, ...fused].map((a) => ({ ...a, name: a.setting.replace(" only", "").replace("fused (all modules)", "fused").replace("fused + hard rules", "fused + rules") }))}>
-              <CartesianGrid stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="name" stroke="#8b9ab3" fontSize={11} />
-              <YAxis domain={[0, 1]} stroke="#5b6a84" fontSize={11} />
-              <Tooltip {...TT} />
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="name" {...AXIS} />
+              <YAxis domain={[0, 1]} {...AXIS} />
+              <Tooltip {...TOOLTIP} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="roc_auc" name="ROC-AUC" fill="#22d3ee" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="recall" name="Recall (FDR)" fill="#5eead4" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="fpr" name="FPR" fill="#fb7185" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="roc_auc" name="ROC-AUC" fill={BRAND} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="recall" name="Recall (FDR)" fill="#8fa2d8" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="fpr" name="FPR" fill={REJECT} radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </Section>
@@ -79,10 +79,10 @@ export default function Metrics() {
         <Section title="Recall per fraud type">
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={perType}>
-              <CartesianGrid stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="type" stroke="#8b9ab3" fontSize={11} /><YAxis domain={[0, 1]} stroke="#5b6a84" fontSize={11} />
-              <Tooltip {...TT} formatter={(v: any) => pct(v)} />
-              <Bar dataKey="recall" radius={[4, 4, 0, 0]}>{perType.map((p) => <Cell key={p.key} fill={TYPE_COLORS[p.key] ?? "#94a3b8"} />)}</Bar>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="type" {...AXIS} /><YAxis domain={[0, 1]} {...AXIS} />
+              <Tooltip {...TOOLTIP} formatter={(v: any) => pct(v)} />
+              <Bar dataKey="recall" radius={[3, 3, 0, 0]}>{perType.map((p) => <Cell key={p.key} fill={TYPE_COLORS[p.key] ?? MUTED} />)}</Bar>
             </BarChart>
           </ResponsiveContainer>
         </Section>
@@ -103,14 +103,14 @@ export default function Metrics() {
           right={<span className="text-xs text-dim">chosen on the {m.cost_curve.chosen_on}; hard-rule cases always flagged</span>}>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={m.cost_curve.points}>
-              <CartesianGrid stroke="#1e293b" />
-              <XAxis dataKey="t" stroke="#8b9ab3" fontSize={11} />
-              <YAxis stroke="#5b6a84" fontSize={11} />
-              <Tooltip {...TT} />
+              <CartesianGrid stroke={GRID} />
+              <XAxis dataKey="t" {...AXIS} />
+              <YAxis {...AXIS} />
+              <Tooltip {...TOOLTIP} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <ReferenceLine x={m.cost_curve.recommended_approve_below} stroke="#5eead4" strokeDasharray="4 4" />
-              <Line dataKey="cost_cal" name="Cost · calibration split" stroke="#22d3ee" dot={false} strokeWidth={2} />
-              <Line dataKey="cost_test" name="Cost · test split" stroke="#fbbf24" dot={false} strokeWidth={2} />
+              <ReferenceLine x={m.cost_curve.recommended_approve_below} stroke={MUTED} strokeDasharray="4 4" />
+              <Line dataKey="cost_cal" name="Cost, calibration split" stroke={BRAND} dot={false} strokeWidth={2} />
+              <Line dataKey="cost_test" name="Cost, test split" stroke={REVIEW} dot={false} strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>
           <p className="mt-2 text-xs text-dim">Recommended APPROVE cut-off {m.cost_curve.recommended_approve_below} (current {m.cost_curve.current_approve_below}); test cost {m.cost_curve.test_cost_recommended} vs {m.cost_curve.test_cost_current} at the current setting.</p>
@@ -122,18 +122,18 @@ export default function Metrics() {
           <div className="space-y-2">
             {Object.entries(m.hard_negative_false_flag_by_sub).map(([k, v]: any) => (
               <div key={k} className="flex items-center gap-3 text-sm"><span className="w-28 capitalize text-muted">{k}</span>
-                <div className="h-2 flex-1 rounded-full bg-white/5"><div className="h-full rounded-full bg-review" style={{ width: `${v * 100}%` }} /></div>
+                <div className="h-2 flex-1 rounded-full bg-bg-2"><div className="h-full rounded-full bg-review" style={{ width: `${v * 100}%` }} /></div>
                 <span className="mono w-14 text-right text-xs">{pct(v)}</span></div>
             ))}
           </div>
           <p className="mt-4 text-xs text-dim">Families share address/phone; hostel students share an IP and have new SIMs; transliterated names differ from the registry. Specificity weighting, IP down-weighting and the family exception keep these low.</p>
         </Section>
-        <Section title="Top model features · leakage check" right={<span className="chip text-approve">{m.leakage_check}</span>}>
+        <Section title="Top model features, leakage check" right={<span className="chip text-approve">{m.leakage_check}</span>}>
           <div className="space-y-1.5">
             {m.top_features.slice(0, 10).map((f: any) => (
               <div key={f.feature} className="flex items-center gap-3 text-xs">
                 <span className="mono w-52 truncate text-muted">{f.feature}</span>
-                <div className="h-1.5 flex-1 rounded-full bg-white/5"><div className="h-full rounded-full bg-brand-2" style={{ width: `${(f.gain / m.top_features[0].gain) * 100}%` }} /></div>
+                <div className="h-1.5 flex-1 rounded-full bg-bg-2"><div className="h-full rounded-full bg-brand" style={{ width: `${(f.gain / m.top_features[0].gain) * 100}%` }} /></div>
                 <span className="mono w-12 text-right text-dim">{f.gain.toFixed(1)}</span>
               </div>
             ))}
@@ -145,7 +145,8 @@ export default function Metrics() {
 }
 
 function Cell2({ v, good }: { v: number; good?: boolean }) {
-  return <div className="rounded-xl border border-line-2 py-6 text-2xl font-semibold tabular-nums" style={{ color: good ? "var(--approve)" : "var(--reject)", background: good ? "rgba(52,211,153,.06)" : "rgba(251,113,133,.06)" }}>{v}</div>;
+  const c = good ? "var(--approve)" : "var(--reject)";
+  return <div className="rounded-lg border border-line py-6 text-2xl font-semibold tabular-nums" style={{ color: c, background: `color-mix(in srgb, ${c} 6%, var(--panel))` }}>{v}</div>;
 }
 
 function BandsEditor({ cfg }: { cfg: any }) {

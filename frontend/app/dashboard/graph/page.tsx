@@ -35,21 +35,21 @@ export default function GraphPage() {
         </button>
       </div>
       <div className="grid gap-4 sm:grid-cols-4">
-        <Stat label="Linked applications" value={g?.nodes.length ?? "—"} />
-        <Stat label="Strong links" value={g?.links.length ?? "—"} />
-        <Stat label="Communities" value={comps || "—"} />
+        <Stat label="Linked applications" value={g?.nodes.length ?? "-"} />
+        <Stat label="Strong links" value={g?.links.length ?? "-"} />
+        <Stat label="Communities" value={comps || "-"} />
         <Stat label="Flagged in clusters" value={flagged} accent="var(--reject)" />
       </div>
       <div className="panel p-4">
         <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
-          <span className="label">Colour by</span>
+          <span className="label">Color by</span>
           {(["type", "band"] as const).map((k) => (
-            <button key={k} className={clsx("rounded-md px-3 py-1 text-xs font-semibold", colorBy === k ? "bg-white/10" : "text-muted")} onClick={() => setColorBy(k)}>{k === "type" ? "fraud pattern" : "decision band"}</button>
+            <button key={k} className={clsx("rounded-md px-3 py-1 text-sm", colorBy === k ? "bg-bg-2 font-medium text-fg" : "text-muted hover:text-fg")} onClick={() => setColorBy(k)}>{k === "type" ? "Fraud pattern" : "Decision"}</button>
           ))}
           <span className="label ml-4">Min cluster size</span>
           <input type="range" min={2} max={8} value={minSize} onChange={(e) => setMinSize(+e.target.value)} />
           <span className="mono text-xs">{minSize}</span>
-          {!!sim.ids.length && <span className="chip ml-auto text-brand"><Radar className="size-3" />{sim.ids.length} ring applicants injected — highlighted</span>}
+          {!!sim.ids.length && <span className="chip ml-auto text-brand"><Radar className="size-3" />{sim.ids.length} ring applicants added, ringed in the graph</span>}
         </div>
         {g ? <IdentityGraph nodes={g.nodes} links={g.links} height={640} colorBy={colorBy} highlight={new Set(sim.ids)} /> :
           <div className="grid h-[640px] place-items-center text-muted">Loading graph…</div>}

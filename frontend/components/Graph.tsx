@@ -1,16 +1,16 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TYPE_COLORS, bandColor } from "@/components/ui";
+import { APPROVE, INK, LINK_COLORS, REJECT, REVIEW, TYPE_COLORS } from "@/lib/theme";
+
+const BAND_HEX: Record<string, string> = { APPROVE, REVIEW, REJECT };
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), { ssr: false });
 
 export type GNode = { id: string; name?: string; band?: string | null; fraud_type?: string | null; source?: string | null; community?: number | null; x?: number; y?: number };
 export type GLink = { source: string; target: string; w: number; kinds: string[] };
 
-const KIND_COLOR: Record<string, string> = {
-  face: "#fb7185", device: "#fbbf24", phone: "#38bdf8", email_stem: "#c084fc", keystroke: "#5eead4", address: "#94a3b8", id_hash: "#f472b6", ip: "#475569",
-};
+const KIND_COLOR = LINK_COLORS;
 
 export function IdentityGraph({ nodes, links, focus, height = 420, colorBy = "band", highlight }: {
   nodes: GNode[]; links: GLink[]; focus?: string; height?: number; colorBy?: "band" | "type"; highlight?: Set<string>;
@@ -35,22 +35,22 @@ export function IdentityGraph({ nodes, links, focus, height = 420, colorBy = "ba
     return () => clearInterval(t);
   }, [w, data]);
   return (
-    <div ref={wrap} style={{ height }} className="relative overflow-hidden rounded-xl border border-line bg-bg-2/60">
+    <div ref={wrap} style={{ height }} className="relative overflow-hidden rounded-xl border border-line bg-panel-2">
       {w > 0 && <ForceGraph2D
         ref={fg} onEngineStop={() => fg.current?.zoomToFit(400, 40)}
         graphData={data} width={w} height={height} backgroundColor="rgba(0,0,0,0)" cooldownTicks={20}
-        linkColor={(l: any) => KIND_COLOR[[...l.kinds].sort((a: string, b: string) => kindRank(a) - kindRank(b))[0]] ?? "#334155"}
+        linkColor={(l: any) => KIND_COLOR[[...l.kinds].sort((a: string, b: string) => kindRank(a) - kindRank(b))[0]] ?? "#c9ced6"}
         linkWidth={(l: any) => 0.6 + 2.2 * l.w}
         nodeCanvasObject={(n: any, ctx, scale) => {
-          const c = colorBy === "type" ? (TYPE_COLORS[n.fraud_type ?? "none"] ?? "#64748b") : (bandColor[n.band] ?? "#64748b");
+          const c = colorBy === "type" ? (TYPE_COLORS[n.fraud_type ?? "none"] ?? "#8a93a2") : (BAND_HEX[n.band] ?? "#8a93a2");
           const r = n.id === focus ? 7 : 4.5;
           if (highlight?.has(n.id) || n.id === focus) {
             ctx.beginPath(); ctx.arc(n.x, n.y, r + 4, 0, 2 * Math.PI); ctx.fillStyle = `${c}33`; ctx.fill();
           }
           ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 2 * Math.PI); ctx.fillStyle = c; ctx.fill();
-          ctx.lineWidth = 1 / scale; ctx.strokeStyle = "#0b1120"; ctx.stroke();
+          ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = "#fdfdfe"; ctx.stroke();
           if (scale > 1.6 || n.id === focus) {
-            ctx.font = `${10 / scale}px ui-sans-serif`; ctx.fillStyle = "#cbd5e1"; ctx.textAlign = "center";
+            ctx.font = `${10 / scale}px ui-sans-serif`; ctx.fillStyle = INK; ctx.textAlign = "center";
             ctx.fillText(n.name ?? n.id, n.x, n.y + r + 9 / scale);
           }
         }}
@@ -59,7 +59,7 @@ export function IdentityGraph({ nodes, links, focus, height = 420, colorBy = "ba
       />}
       <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-1.5">
         {Object.entries(KIND_COLOR).map(([k, c]) => (
-          <span key={k} className="chip bg-bg/70 text-[10px]"><span className="size-1.5 rounded-full" style={{ background: c }} />{k.replace("_", " ")}</span>
+          <span key={k} className="chip text-[11px]"><span className="size-1.5 rounded-full" style={{ background: c }} />{k.replace("_", " ")}</span>
         ))}
       </div>
     </div>
