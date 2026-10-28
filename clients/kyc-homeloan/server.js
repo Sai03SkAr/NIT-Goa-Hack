@@ -249,8 +249,9 @@ async function registry(kind, key) {
   if ((await mode()) === "local") return kind === "pan" ? lookupPan(key) : lookupId(key);
   try {
     const r = await remote(`/api/partner/v1/registry/${kind}/${encodeURIComponent(key)}`);
+    if (r.status === 503 || r.status === 401) return { unavailable: true, why: (await r.json()).detail };
     return r.ok ? await r.json() : null;
-  } catch { return null; }
+  } catch { return { unavailable: true, why: `TrueID not reachable at ${TRUEID}` }; }
 }
 
 /** Head-turn liveness challenge, issued and later verified by TrueID (frames: neutral + one per step).
@@ -347,13 +348,15 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (p === "/api/mode") return json(res, 200, { mode: await mode(), backend: TRUEID, partner: PARTNER.name });
-    if (p === "/api/demo-identities") return json(res, 200, (await mode()) === "local" ? DEMO_IDENTITIES : []);
+    // the same test people exist in TrueID once clients/kyc-homeloan/tools/enrol_in_trueid.py has run
+    if (p === "/api/demo-identities") return json(res, 200, DEMO_IDENTITIES);
 
     if (p === "/api/verify/pan" && req.method === "POST") {
       const { pan, dob } = await readBody(req);
       const v = String(pan || "").toUpperCase().trim();
       if (!PAN_RE.test(v)) return json(res, 200, { ok: false, error: "Enter a valid individual PAN, e.g. ABCPK1234Z." });
       const rec = await registry("pan", v);
+      if (rec?.unavailable) return json(res, 200, { ok: false, error: `Verification service unavailable: ${rec.why}` });
       if (!rec) return json(res, 200, { ok: false, error: "This PAN is not found in Income Tax records." });
       if (dob && rec.dob !== dob) return json(res, 200, { ok: false, error: "Date of birth does not match PAN records." });
       return json(res, 200, { ok: true, name: rec.name, dob: rec.dob, id_last4: rec.id_last4 });
@@ -364,6 +367,7 @@ const server = http.createServer(async (req, res) => {
       if (!/^[2-9]\d{11}$/.test(v)) return json(res, 200, { ok: false, error: "Enter a valid 12-digit Aadhaar number." });
       if (!verhoeff(v)) return json(res, 200, { ok: false, error: "This isn't a valid Aadhaar number (the check digit doesn't match)." });
       const rec = await registry("uidai", v);
+      if (rec?.unavailable) return json(res, 200, { ok: false, error: `Verification service unavailable: ${rec.why}` });
       if (!rec) return json(res, 200, { ok: false, error: "Aadhaar number not found." });
       return json(res, 200, { ok: true, name: rec.name, dob: rec.dob, gender: rec.gender, address: rec.address || "" });
     }

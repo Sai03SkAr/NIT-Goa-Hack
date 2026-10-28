@@ -272,11 +272,20 @@ def analytics(days: int = 14, x_partner_key: str | None = Header(default=None)):
 # ------------------------------------------------------------------ simulated government sources for partners
 # In production the bank calls NSDL / DigiLocker itself. Here they answer from TrueID's mock registries, returning only
 # what those services would give the bank (no issuer photo, no other registries).
+def _lookup(fn, key: str):
+    """A registry that has not been built is an outage (503), never 'not found'."""
+    from app.modules.registry import mocks
+    try:
+        return fn(key)
+    except mocks.RegistryUnavailable:
+        raise HTTPException(503, "TrueID's mock registries are not built yet (run the build, then the partner enrolment)")
+
+
 @router.get("/registry/pan/{pan}")
 def registry_pan(pan: str, x_partner_key: str | None = Header(default=None)):
     from app.modules.registry import mocks
     _partner(x_partner_key)
-    r = mocks.pan(pan)
+    r = _lookup(mocks.pan, pan)
     if not r:
         raise HTTPException(404, "not found")
     # NSDL's verification response says whether the PAN is Aadhaar-seeded; the last 4 digits stand in for that here
@@ -288,7 +297,7 @@ def registry_pan_link(pan: str, id_number: str, x_partner_key: str | None = Head
     """Income Tax 'Link Aadhaar status': is this PAN linked to exactly this Aadhaar number?"""
     from app.modules.registry import mocks
     _partner(x_partner_key)
-    r = mocks.pan(pan)
+    r = _lookup(mocks.pan, pan)
     return {"pan_found": r is not None, "linked": bool(r) and r.get("subject") == id_number}
 
 
@@ -327,7 +336,7 @@ KIND_LABEL = {"id_card": "ID card", "electricity_bill": "electricity bill", "sal
 def registry_uidai(id_number: str, x_partner_key: str | None = Header(default=None)):
     from app.modules.registry import mocks
     _partner(x_partner_key)
-    r = mocks.uidai(id_number)
+    r = _lookup(mocks.uidai, id_number)
     if not r:
         raise HTTPException(404, "not found")
     return {k: r[k] for k in ("name", "dob", "gender", "address") if k in r}

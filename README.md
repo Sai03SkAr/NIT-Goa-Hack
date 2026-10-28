@@ -35,6 +35,7 @@ Each has an operations console showing TrueID's verdicts. See **[clients/README.
 Two KYC-only replicas follow real Indian flows: **Tideway** (Zerodha-style, port 3011, server-issued head-turn
 liveness) and **Meridian Bank** (HDFC InstaAccount-style, port 3012, uploaded selfie). See
 **[clients/KYC-REPLICAS.md](clients/KYC-REPLICAS.md)**. Partners call `/api/partner/v1/*` with an `X-Partner-Key`.
+Setup and end-to-end testing: **[docs/PARTNER_INTEGRATION.md](docs/PARTNER_INTEGRATION.md)**; check the connection with `python scripts/check_partner_connection.py`.
 
 ## Testing
 See **[docs/TESTING.md](docs/TESTING.md)**.

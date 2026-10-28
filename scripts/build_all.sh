@@ -3,6 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
+[ -x .venv/Scripts/python.exe ] && PY=.venv/Scripts/python.exe  # Windows (Git Bash)
 N=${N:-1400}
 WORKERS=${WORKERS:-4}
 $PY backend/app/modules/document/checksums.py

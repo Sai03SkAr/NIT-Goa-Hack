@@ -151,12 +151,17 @@ def main():
     ap.add_argument("--photo", help="a photo of your face for the ID cards (so the live selfie matches)")
     a = ap.parse_args()
     portrait = Image.open(a.photo) if a.photo else None
+    generate({p["name"].lower().replace(" ", "-"): portrait for p in PEOPLE})
+
+
+def generate(portraits: dict):
+    """portraits: slug -> PIL image (or None) printed on that person's ID card."""
     last_month = (TODAY.replace(day=1) - timedelta(days=1)).replace(day=1)
     people = []
     for p in PEOPLE:
         slug = p["name"].lower().replace(" ", "-")
         f = OUT / slug
-        save(id_card(p, portrait), f / "id-card.png")
+        save(id_card(p, portraits.get(slug)), f / "id-card.png")
         save(bill(p, TODAY - timedelta(days=12)), f / "electricity-bill.jpg")
         save(slip(p, last_month), f / "salary-slip.jpg")
         save(statement(p, last_month), f / "bank-statement.jpg")
