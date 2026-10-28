@@ -63,15 +63,17 @@ See **[docs/TESTING.md](docs/TESTING.md)**. Quick check: `.venv/bin/python scrip
 ## Results (seeded build: 1,400 applications, test = days 20-29, 444 apps, 85 fraud)
 | Setting | ROC-AUC | Recall | FPR |
 |---|---|---|---|
-| Document only | 0.79 | 0.59 | 0.8% |
+| Document only | 0.79 | 0.58 | 3.6% |
 | Biometric only | 0.98 | 0.87 | 1.1% |
-| Behaviour only | 0.84 | 0.67 | 7.5% |
-| Registry only | 0.91 | 0.75 | 0.3% |
-| Correlation only | 0.67 | 0.34 | 2.2% |
-| **Fused** | **0.996** | **1.00** | **0.8%** |
-| Fused + hard rules | 0.996 | 1.00 | 7.2% (mostly sent to review: failed liveness, face mismatch) |
+| Behaviour only | 0.85 | 0.74 | 13.9% |
+| Registry only | 0.90 | 0.76 | 0.3% |
+| Correlation only | 0.68 | 0.34 | 1.4% |
+| **Fused** | **0.997** | **1.00** | **0.6%** |
+| Fused + hard rules + quality gate | 0.997 | 1.00 | 7.5% flagged, almost all sent to review (failed liveness, face mismatch, poor photo) |
 
-Fraud-pattern labels are correct for 84.7% of caught fraud. Acceptance test: `scripts/run_tests.py` passes 14/14 on fresh identities.
+PR-AUC 0.977. Fraud-pattern labels are correct for 84.7% of caught fraud. Acceptance test: `scripts/run_tests.py` passes 14/14 on fresh identities.
+
+**Under attack (Attack Lab, test-split sample of 185 apps, 85 fraud):** across JPEG, noise, blur, brightness and screen-recapture sweeps at every strength, **no fraud is approved** and fraud recall stays at 100%; at most 6% of genuine applicants are rejected. Very poor photos (blur >= 1.5, noise >= 20, strong recapture) send genuine people to "please retake" instead of a rejection. Training uses degraded copies of training-period applications (`eval/augment.py`); calibration and test data are never augmented.
 
 **Thresholds (all measured, none guessed):**
 - Face 1:1 match at FAR 0.1% (0.203): genuine miss rate 2.6%. The equal-error point (0.12) let ~2% of impostors through and was retired.
@@ -82,7 +84,7 @@ Fraud-pattern labels are correct for 84.7% of caught fraud. Acceptance test: `sc
 **TruFor (measured on our cards):** on 40 test cards, clean vs Poisson-edited DOB, TruFor's score is at chance (AUC 0.49) and it flags 97.5% of clean cards too; its heatmap lights the legitimately pasted photo (mean 0.73) and misses the edited DOB (0.13). The signed QR catches 100% of the same edits. TruFor is available as evidence on the case page and in the Attack Lab (`./scripts/setup_trufor.sh`); it never feeds the decision.
 
 **Fixed weaknesses:** tilted card photos are read with a QR-anchored perspective correction when it helps (best of both readings: mild tilt 10/10, moderate 7/10 vs 0/10 before); recapture no longer rejects genuine people for misread dates.
-**Remaining weaknesses:** very strong recapture or noise can still make the QR unreadable; see the Attack Lab.
+**Remaining weaknesses:** very strong recapture, blur or noise sends most genuine applicants to review (retake), so throughput drops on bad photos; see the Attack Lab.
 
 ## Operations (environment variables, all optional)
 | Variable | Default | Effect |
