@@ -28,7 +28,7 @@ def _portrait(img_bgr):
 
 
 def _payload(f):
-    return {"n": f["name"].upper(), "d": f["dob"], "g": f["gender"], "l4": f["id_number"][-4:], "i": f["issue_date"]}
+    return {"n": f["name"].upper(), "d": f["dob"], "g": f["gender"], "id": f["id_number"], "i": f["issue_date"]}
 
 
 def build_kit(photo_bgr) -> dict:
@@ -48,7 +48,7 @@ def build_kit(photo_bgr) -> dict:
     portrait.save(face_path, quality=92)
     # enrol as a real citizen with a long, clean history
     reg["uidai"][idn] = {"name": me["name"], "dob": me["dob"], "gender": me["gender"], "face": str(face_path.relative_to(GEN))}
-    reg["pan"][me["pan"]] = {"name": me["name"], "dob": me["dob"], "id_last4": idn[-4:]}
+    reg["pan"][me["pan"]] = {"name": me["name"], "dob": me["dob"], "subject": idn}
     reg["telecom"][me["phone"]] = {"activated": (date.today() - timedelta(days=2400)).strftime("%d/%m/%Y"), "subscriber": me["name"]}
     reg["ckyc"][idn] = {"first_seen": "11/08/2019"}
     reg["bureau"][idn] = {"accounts": 3, "oldest_months": 70, "inquiries_90d": 0}

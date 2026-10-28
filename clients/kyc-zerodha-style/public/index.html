@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tideway · Account KYC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --side: #0f1530; --side-2: #171f42; --side-ink: #c9cfe6; --side-muted: #7d86a8;
+    --accent: #5b5bf0; --accent-2: #8b5cf6; --accent-d: #4646d8; --accent-soft: #eef0ff;
+    --ink: #151a30; --ink-2: #4b5270; --muted: #8c92ab; --line: #e6e8f2; --bg: #f5f6fb; --card: #fff;
+    --ok: #16a34a; --ok-soft: #e8f7ee; --err: #e5484d; --warn: #f59e0b;
+    --r: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 Inter, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+
+  /* ---------- shell: dark step rail + content ---------- */
+  .shell { display: grid; grid-template-columns: 340px 1fr; min-height: 100vh; }
+  .side { background: radial-gradient(120% 60% at 0% 0%, #22295a 0%, var(--side) 55%); color: var(--side-ink); padding: 24px 26px; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; letter-spacing: .14em; font-size: 14px; }
+  .brand svg { width: 28px; height: 28px; }
+  .side h3 { margin: 0; color: #fff; font-size: 19px; font-weight: 600; }
+  .side .lede { margin: 6px 0 0; font-size: 13px; color: var(--side-muted); }
+  .rail { list-style: none; margin: 0; padding: 0; position: relative; }
+  .rail li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 5px 0; position: relative; }
+  .rail li:not(:last-child)::after { content: ""; position: absolute; left: 14px; top: 35px; bottom: -5px; width: 2px; background: #2a335f; border-radius: 2px; }
+  .rail li.done:not(:last-child)::after { background: linear-gradient(var(--accent), var(--accent-2)); }
+  .rail .dot { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--side-2); border: 1.5px solid #2f3866; color: var(--side-muted); }
+  .rail li.done .dot { background: linear-gradient(135deg, var(--accent), var(--accent-2)); border-color: transparent; color: #fff; }
+  .rail li.on .dot { border-color: var(--accent-2); color: #fff; box-shadow: 0 0 0 4px rgba(139,92,246,.18); }
+  .rail b { display: block; font-size: 14px; font-weight: 500; color: var(--side-ink); line-height: 1.3; }
+  .rail span { font-size: 12px; color: var(--side-muted); }
+  .rail li.on b { color: #fff; }
+  .reqs { background: rgba(255,255,255,.04); border: 1px solid #2a335f; border-radius: 14px; padding: 14px; }
+  .reqs h4 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--side-muted); font-weight: 600; }
+  .reqs > div { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+  .req { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0; color: var(--side-muted); }
+  .req i { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #3a4475; flex: none; display: grid; place-items: center; font-style: normal; font-size: 10px; }
+  .req.ok { color: var(--side-ink); } .req.ok i { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .shield { margin-top: auto; display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--side-muted); background: rgba(255,255,255,.04); border-radius: 12px; padding: 10px 12px; }
+  .shield .led { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(245,158,11,.2); flex: none; }
+  .shield.live .led { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+  .shield b { color: var(--side-ink); font-weight: 500; }
+
+  .main { padding: 28px clamp(16px, 4vw, 56px) 60px; min-width: 0; }
+  .main > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+  .count { font-size: 13px; color: var(--muted); }
+  .count b { color: var(--ink); font-weight: 600; }
+  .bar { flex: 1; max-width: 360px; height: 6px; background: #e4e6f1; border-radius: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 6px; transition: width .35s ease; }
+  .help { font-size: 13px; color: var(--ink-2); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 1px 2px rgba(16,24,64,.04), 0 12px 32px -12px rgba(16,24,64,.10); max-width: 760px; overflow: hidden; animation: rise .3s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .card .head { padding: 28px 32px 0; }
+  .card .head h1 { margin: 0 0 6px; font-size: 26px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
+  .card .head p { margin: 0; color: var(--ink-2); max-width: 560px; }
+  .card .head ul { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .card .head li { font-size: 12.5px; color: var(--ink-2); background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 4px 12px; }
+  .card .body { padding: 22px 32px 30px; }
+  @media (max-width: 560px) { .card .head { padding: 22px 18px 0; } .card .body { padding: 18px 18px 24px; } .card .head h1 { font-size: 22px; } }
+  .body h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+  .body .sub { color: var(--muted); font-size: 13.5px; margin: 0 0 16px; }
+
+  label.f { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); margin: 16px 0 6px; }
+  .in { display: flex; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; transition: border-color .15s, box-shadow .15s; }
+  .in:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(91,91,240,.12); }
+  .in .pre { padding: 12px 14px; border-right: 1px solid var(--line); color: var(--ink-2); display: flex; gap: 6px; align-items: center; font-size: 14px; }
+  .in input, .in select { flex: 1; border: 0; outline: 0; padding: 12px 14px; font: inherit; color: var(--ink); background: transparent; min-width: 0; border-radius: 12px; }
+  .in input[readonly] { color: var(--ink-2); background: var(--bg); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 520px) { .row2 { grid-template-columns: 1fr; } }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: 0; border-radius: 12px; padding: 13px 28px; font: 600 15px Inter, sans-serif; cursor: pointer; margin-top: 24px; min-width: 200px; box-shadow: 0 8px 20px -8px rgba(91,91,240,.6); transition: transform .1s, box-shadow .15s; }
+  .btn:hover { box-shadow: 0 10px 24px -8px rgba(91,91,240,.75); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  .btn.ghost { background: #fff; color: var(--accent); border: 1.5px solid #d9dcfb; box-shadow: none; }
+  @media (max-width: 520px) { .btn { width: 100%; } }
+  .link { background: none; border: 0; color: var(--accent); font: 500 13px Inter, sans-serif; cursor: pointer; padding: 0; }
+  .err { color: var(--err); font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 16px; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--ink-2); margin-top: 14px; }
+  .chk input { margin-top: 4px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .pill { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 20px; background: var(--ok-soft); color: var(--ok); }
+  .pill.blue { background: var(--accent-soft); color: var(--accent-d); }
+  .vcard { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: linear-gradient(180deg, #fbfbff, #fff); font-size: 14px; }
+  .vcard dl { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; margin: 10px 0 0; }
+  .vcard dt { color: var(--muted); } .vcard dd { margin: 0; color: var(--ink); }
+  @media (max-width: 480px) { .vcard dl { grid-template-columns: 1fr; gap: 0; } .vcard dd { margin-bottom: 6px; } }
+  .otp { display: flex; gap: 10px; }
+  .otp input { width: 50px; height: 56px; text-align: center; font-size: 22px; font-weight: 600; border: 1.5px solid var(--line); border-radius: 12px; outline: 0; }
+  .otp input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(91,91,240,.12); }
+  @media (max-width: 400px) { .otp { gap: 6px; } .otp input { width: 42px; height: 50px; } }
+  .seg { display: flex; flex-wrap: wrap; gap: 8px; }
+  .seg label { border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  .seg input { display: none; }
+  .seg label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-d); }
+  .alt { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12.5px; margin: 16px 0 0; }
+  .alt::before, .alt::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  /* camera: dark stage with face oval and tips */
+  .stage { background: #0b0f22; border-radius: 18px; padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 18px; color: #c9cfe6; }
+  @media (max-width: 680px) { .stage { grid-template-columns: 1fr; } }
+  .cam { position: relative; width: 100%; aspect-ratio: 4/3; background: #05070f; border-radius: 14px; overflow: hidden; display: grid; place-items: center; }
+  .cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .cam img { width: 100%; height: 100%; object-fit: cover; }
+  .cam .ring { position: absolute; inset: 10% 28%; border: 3px solid rgba(255,255,255,.85); border-radius: 50%; box-shadow: 0 0 0 999px rgba(5,7,15,.45); pointer-events: none; }
+  .cam .tag { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); color: #fff; font-size: 12.5px; background: rgba(15,21,48,.8); padding: 5px 12px; border-radius: 20px; white-space: nowrap; }
+  .cam .idle { text-align: center; color: #7d86a8; font-size: 13px; }
+  .cam .idle svg { width: 46px; height: 46px; display: block; margin: 0 auto 8px; opacity: .8; }
+  .tips { list-style: none; margin: 0; padding: 0; font-size: 13px; display: grid; gap: 10px; align-content: start; }
+  .tips li { display: flex; gap: 10px; align-items: flex-start; }
+  .tips li::before { content: "✓"; width: 20px; height: 20px; flex: none; border-radius: 50%; background: rgba(139,92,246,.2); color: #b9a6ff; display: grid; place-items: center; font-size: 11px; }
+  .geo { font-size: 12.5px; color: #7d86a8; margin-top: 4px; }
+
+  canvas.sig { width: 100%; height: 190px; border: 1.5px dashed #c9cdea; border-radius: 14px; background: repeating-linear-gradient(#fff 0 46px, #f1f2fa 46px 47px); touch-action: none; cursor: crosshair; display: block; }
+
+  /* document picker rows */
+  .doc { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; border: 1.5px solid var(--line); border-radius: 14px; padding: 14px 16px; cursor: pointer; margin-top: 12px; background: #fff; transition: border-color .15s, background .15s; }
+  .doc:hover { border-color: #c9ccf8; background: #fcfcff; }
+  .doc .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); display: grid; place-items: center; font-size: 20px; }
+  .doc b { display: block; font-weight: 600; font-size: 14.5px; } .doc span { font-size: 12.5px; color: var(--muted); }
+  .doc .go { color: var(--muted); font-size: 18px; }
+  .doc.done { border-color: #bfe8cf; background: #f7fdf9; } .doc.done .ic { background: var(--ok-soft); } .doc.done .go { color: var(--ok); font-size: 14px; font-weight: 600; }
+  .doc input { display: none; }
+  .preview { margin-top: 12px; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); max-width: 360px; }
+  .preview img { display: block; width: 100%; }
+
+  /* result */
+  .result { text-align: center; padding: 8px 0; }
+  .badge { width: 84px; height: 84px; border-radius: 50%; margin: 6px auto 16px; display: grid; place-items: center; font-size: 38px; color: #fff; background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 0 0 10px #e8f7ee; }
+  .badge.review { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 0 10px #fff4dd; }
+  .badge.declined { background: linear-gradient(135deg, #f87171, #e5484d); box-shadow: 0 0 0 10px #fdecec; }
+  .timeline { list-style: none; padding: 0; margin: 22px auto 0; max-width: 420px; text-align: left; }
+  .timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 0 0 18px; position: relative; }
+  .timeline li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 28px; bottom: 2px; width: 2px; background: var(--line); }
+  .timeline i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; background: var(--bg); border: 1.5px solid var(--line); color: var(--muted); }
+  .timeline li.ok i { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .timeline li.run i { border-color: var(--accent); }
+  .timeline li.run i::after { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; }
+  .timeline b { display: block; font-weight: 600; font-size: 14px; } .timeline span { font-size: 12.5px; color: var(--muted); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .modal { position: fixed; inset: 0; background: rgba(15,21,48,.55); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 30; padding: 16px; }
+  .sheet { background: #fff; width: 100%; max-width: 420px; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.3); }
+  .sheet .hd { background: #1d3c78; color: #fff; padding: 14px 18px; font-weight: 600; display: flex; gap: 10px; align-items: center; }
+  .sheet .bd { padding: 18px; }
+  .sheet .btn { width: 100%; }
+  .toast { position: fixed; right: 16px; top: 16px; background: var(--side); color: #fff; font-size: 13.5px; padding: 12px 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 40; max-width: 320px; }
+  .toast b { color: #b9a6ff; letter-spacing: .14em; font-size: 15px; }
+  .demo { position: fixed; right: 16px; bottom: 16px; z-index: 20; }
+  .demo button { background: #fff8e6; border: 1px solid #f0d28a; color: #8a6200; border-radius: 20px; padding: 7px 14px; font: 500 12.5px Inter, sans-serif; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .demo .panel { position: absolute; bottom: 42px; right: 0; width: 340px; max-width: calc(100vw - 32px); background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 14px; font-size: 12.5px; }
+  .demo table { width: 100%; border-collapse: collapse; } .demo td { padding: 5px 4px; border-top: 1px solid #f0f0f4; vertical-align: top; }
+  footer { max-width: 760px; font-size: 12px; color: var(--muted); padding: 22px 0 0; }
+
+  /* phones: rail becomes a compact header with a dot strip */
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; padding: 18px 16px; gap: 14px; }
+    .side .lede, .reqs, .rail span { display: none; }
+    .rail { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+    .rail li { display: block; padding: 0; }
+    .rail li::after { display: none; }
+    .rail li b { display: none; }
+    .rail .dot { width: 26px; height: 26px; font-size: 11px; }
+    .shield { margin-top: 0; }
+    .main { padding-top: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="8" fill="url(#g)"/><path d="M5 17c3-4 6-4 9 0s6 4 9 0" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><path d="M5 11c3-4 6-4 9 0s6 4 9 0" stroke="#ffd27a" stroke-width="2.2" stroke-linecap="round"/><defs><linearGradient id="g" x1="0" y1="0" x2="28" y2="28"><stop stop-color="#5b5bf0"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs></svg>
+      TIDEWAY
+    </div>
+    <div><h3>Open your account</h3><p class="lede">Demat &amp; trading account. Fully online, about 10 minutes.</p></div>
+    <ol class="rail" id="rail"></ol>
+    <div class="reqs"><h4>Verification requirements</h4><div id="reqs"></div></div>
+    <div class="shield" id="shield"><span class="led"></span><span>Checking identity protection…</span></div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><span class="count" id="count"></span><div class="bar"><i id="bar"></i></div><a class="help" href="#" onclick="return false">Need help?</a></div>
+    <div id="app"></div>
+    <footer>Tideway is a fictional broker. This KYC flow follows Zerodha's online account-opening steps for the TrueID Shield demo. It is not affiliated with Zerodha.</footer>
+  </main>
+</div>
+<div class="demo" id="demo" hidden></div>
+
+<script src="kyc-common.js"></script>
+<script>
+const STEPS = [
+  ["mobile", "Mobile number", "Verify with OTP"], ["email", "Email", "For statements and login"], ["pan", "PAN", "Checked with Income Tax"],
+  ["aadhaar", "Aadhaar", "Fetched via DigiLocker"], ["personal", "Personal details", "Required by SEBI"],
+  ["ipv", "Live photo", "In-person verification"], ["signature", "Signature", "Sign on screen"], ["docs", "Documents", "PAN card photo"],
+  ["esign", "Review & eSign", "Aadhaar OTP"],
+];
+const REQS = [
+  ["mobile_otp", "Mobile number"], ["email_otp", "Email address"], ["pan_nsdl", "PAN (Income Tax)"], ["digilocker_aadhaar", "Aadhaar (DigiLocker)"],
+  ["webcam_ipv", "Live photo"], ["signature", "Signature"], ["pan_card_upload", "PAN card photo"], ["esign", "eSign"],
+];
+const S = {
+  step: 0, form: {}, checks: {}, pendingOtp: null, frames: [], selfie: null, card: null, sig: null,
+  camera: { labels: [], active: "", virtual: false }, geo: null, appId: null,
+};
+const tel = new KYC.Telemetry();
+tel.attach(document);
+const $ = (s, r = document) => r.querySelector(s);
+const app = $("#app");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function toast(html, ms = 9000) {
+  const t = document.createElement("div"); t.className = "toast"; t.innerHTML = html; document.body.appendChild(t);
+  setTimeout(() => t.remove(), ms);
+}
+function sendOtp(channel, to) {
+  S.pendingOtp = KYC.otp();
+  toast(`Demo ${channel} to ${esc(to)}<br>Your Tideway verification code is <b>${S.pendingOtp}</b>`);
+}
+function otpBoxes(id) {
+  return `<div class="otp" id="${id}">${Array.from({ length: 6 }, (_, i) => `<input name="${id}${i}" inputmode="numeric" maxlength="1" aria-label="OTP digit ${i + 1}">`).join("")}</div>`;
+}
+function wireOtp(id) {
+  const boxes = [...document.querySelectorAll(`#${id} input`)];
+  boxes.forEach((b, i) => {
+    b.addEventListener("input", () => { b.value = b.value.replace(/\D/g, "").slice(-1); if (b.value && boxes[i + 1]) boxes[i + 1].focus(); });
+    b.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !b.value && boxes[i - 1]) boxes[i - 1].focus(); });
+    b.addEventListener("paste", (e) => { const v = (e.clipboardData.getData("text") || "").replace(/\D/g, "").slice(0, 6); if (v.length === 6) { e.preventDefault(); boxes.forEach((x, k) => (x.value = v[k])); } });
+  });
+  boxes[0]?.focus();
+  return () => boxes.map((b) => b.value).join("");
+}
+/** Step rail, requirements checklist and progress bar. `all` marks every step done (after submit). */
+function renderSteps(all = false) {
+  $("#rail").innerHTML = STEPS.map(([, n, sub], i) => {
+    const cls = all || i < S.step ? "done" : i === S.step ? "on" : "";
+    return `<li class="${cls}"><span class="dot">${cls === "done" ? "✓" : i + 1}</span><div><b>${n}</b><span>${sub}</span></div></li>`;
+  }).join("");
+  $("#reqs").innerHTML = REQS.map(([k, n]) => `<div class="req ${S.checks[k] ? "ok" : ""}"><i>${S.checks[k] ? "✓" : ""}</i>${n}</div>`).join("");
+  const n = all ? STEPS.length : S.step;
+  $("#count").innerHTML = all ? "<b>Submitted</b>" : `Step <b>${S.step + 1}</b> of ${STEPS.length}`;
+  $("#bar").style.width = `${Math.round((n / STEPS.length) * 100)}%`;
+}
+function go(i) { S.step = i; renderSteps(); render(); window.scrollTo(0, 0); }
+function next() { go(S.step + 1); }
+
+const ART = "";
+function layout(lead, form) {
+  app.innerHTML = `<div class="card"><div class="head">${lead}</div><div class="body">${form}</div></div>`;
+  renderSteps();
+}
+
+// ---------- 1. Mobile ----------
+function stepMobile() {
+  layout(`<h1>Open a free demat &amp; trading account</h1><p>Start investing brokerage free. Account opening is fully online and paperless.</p>
+    <ul><li>PAN card</li><li>Aadhaar-linked mobile</li><li>Webcam or phone camera</li><li>~10 minutes</li></ul>${ART}`,
+    `<h2>Let's start with your mobile number</h2><p class="sub">Or <a href="#" onclick="return false">track an existing application</a></p>
+     <div id="mstage"></div>`);
+  const stage = $("#mstage");
+  const ask = () => {
+    stage.innerHTML = `<div class="in"><span class="pre">🇮🇳 +91</span><input id="phone" name="phone" inputmode="numeric" maxlength="10" placeholder="Enter your mobile number" value="${esc(S.form.phone)}" autocomplete="tel-national"></div>
+      <div class="err" id="err"></div><button class="btn" id="go">Get OTP</button>
+      <p class="note">By proceeding, you agree to the Tideway terms &amp; privacy policy. You will receive SMS and calls from Tideway about your application.</p>`;
+    $("#phone").focus();
+    $("#go").onclick = () => {
+      const v = $("#phone").value.trim();
+      if (!/^[6-9]\d{9}$/.test(v)) return ($("#err").textContent = "Please enter a valid 10-digit mobile number.");
+      S.form.phone = v; sendOtp("SMS", "+91 " + v); verify();
+    };
+  };
+  const verify = () => {
+    stage.innerHTML = `<p class="sub" style="margin:0 0 12px">Enter the OTP sent to <b>+91 ${esc(S.form.phone)}</b> · <button class="link" id="edit">Change</button></p>
+      ${otpBoxes("motp")}<div class="err" id="err"></div><button class="btn" id="go">Verify &amp; continue</button>
+      <p class="note">Didn't get it? <button class="link" id="resend">Resend OTP</button></p>`;
+    const val = wireOtp("motp");
+    $("#edit").onclick = ask;
+    $("#resend").onclick = () => sendOtp("SMS", "+91 " + S.form.phone);
+    $("#go").onclick = () => { if (val() !== S.pendingOtp) return ($("#err").textContent = "Invalid OTP. Please try again."); S.checks.mobile_otp = true; next(); };
+  };
+  ask();
+}
+
+// ---------- 2. Email ----------
+function stepEmail() {
+  layout(`<h1>Your email address</h1><p>Contract notes, account statements and your login details will be sent here.</p>${ART}`,
+    `<h2>Verify your email</h2><p class="sub">Use an address you check regularly.</p><div id="estage"></div>`);
+  const stage = $("#estage");
+  const ask = () => {
+    stage.innerHTML = `<button class="btn ghost" style="margin-top:0;width:100%" id="g">Continue with Google</button>
+      <p class="alt">or use email OTP</p>
+      <label class="f" for="email">Email address</label><div class="in"><input id="email" name="email" type="email" placeholder="name@example.com" value="${esc(S.form.email)}" autocomplete="email"></div>
+      <div class="err" id="err"></div><button class="btn" id="go">Get OTP</button>`;
+    $("#g").onclick = () => toast("Google sign-in isn't wired up in this replica. Use the email OTP below.", 5000);
+    $("#go").onclick = () => {
+      const v = $("#email").value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return ($("#err").textContent = "Enter a valid email address.");
+      S.form.email = v; sendOtp("email", v); verify();
+    };
+  };
+  const verify = () => {
+    stage.innerHTML = `<p class="sub" style="margin:0 0 12px">Enter the OTP sent to <b>${esc(S.form.email)}</b> · <button class="link" id="edit">Change</button></p>
+      ${otpBoxes("eotp")}<div class="err" id="err"></div><button class="btn" id="go">Verify &amp; continue</button>`;
+    const val = wireOtp("eotp");
+    $("#edit").onclick = ask;
+    $("#go").onclick = () => { if (val() !== S.pendingOtp) return ($("#err").textContent = "Invalid OTP. Please try again."); S.checks.email_otp = true; next(); };
+  };
+  ask();
+}
+
+// ---------- 3. PAN ----------
+function stepPan() {
+  layout(`<h1>PAN details</h1><p>SEBI requires your PAN to open a demat and trading account. We verify it with the Income Tax Department.</p>${ART}`,
+    `<h2>Enter your PAN</h2><p class="sub">The date of birth must match your PAN card.</p>
+     <div class="row2"><div><label class="f" for="pan">PAN</label><div class="in"><input id="pan" name="pan" maxlength="10" placeholder="ABCDE1234F" style="text-transform:uppercase" value="${esc(S.form.pan)}"></div></div>
+     <div><label class="f" for="dob">Date of birth (as on PAN)</label><div class="in"><input id="dob" name="dob" type="date" value="${esc(S.dobIso)}"></div></div></div>
+     <div id="panok"></div><div class="err" id="err"></div><button class="btn" id="go">Verify PAN</button>`);
+  $("#pan").focus();
+  $("#go").onclick = async () => {
+    const pan = $("#pan").value.toUpperCase().trim(), iso = $("#dob").value;
+    if (!iso) return ($("#err").textContent = "Enter your date of birth.");
+    $("#go").disabled = true; $("#err").textContent = "";
+    const r = await KYC.api("/api/verify/pan", { pan, dob: KYC.toDmy(iso) });
+    $("#go").disabled = false;
+    if (!r.ok) return ($("#err").textContent = r.error);
+    Object.assign(S.form, { pan, dob: KYC.toDmy(iso) }); S.dobIso = iso; S.panName = r.name; S.panLast4 = r.id_last4; S.checks.pan_nsdl = true;
+    renderSteps();
+    $("#panok").innerHTML = `<div class="vcard" style="margin-top:16px"><span class="pill">✓ PAN verified</span><dl><dt>Name as per PAN</dt><dd>${esc(r.name)}</dd></dl></div>`;
+    $("#go").textContent = "Continue"; $("#go").onclick = next;
+  };
+}
+
+// ---------- 4. Aadhaar via DigiLocker ----------
+function stepAadhaar() {
+  layout(`<h1>Aadhaar via DigiLocker</h1><p>Your name, date of birth, gender, photo and address come straight from UIDAI through DigiLocker. You can't edit them here.</p>
+    <ul><li>Aadhaar-linked mobile for the OTP</li><li>PAN must be linked to this Aadhaar</li></ul>${ART}`,
+    `<h2>Connect to DigiLocker</h2><p class="sub">A secure DigiLocker window will open to share your Aadhaar with Tideway.</p>
+     <div id="aok">${S.aadhaar ? aadhaarCard() : ""}</div><div class="err" id="err"></div>
+     <button class="btn" id="go">${S.aadhaar ? "Continue" : "Connect to DigiLocker"}</button>`);
+  $("#go").onclick = S.aadhaar ? next : digilocker;
+}
+function aadhaarCard() {
+  const a = S.aadhaar;
+  return `<div class="vcard"><span class="pill">✓ Fetched from DigiLocker</span><dl>
+    <dt>Name</dt><dd>${esc(a.name)}</dd><dt>Date of birth</dt><dd>${esc(a.dob)}</dd><dt>Gender</dt><dd>${a.gender === "F" ? "Female" : a.gender === "M" ? "Male" : esc(a.gender)}</dd>
+    <dt>Aadhaar</dt><dd>XXXX XXXX ${esc(S.form.id_number.slice(-4))}</dd><dt>Address</dt><dd>${esc(a.address || "As per Aadhaar")}</dd></dl></div>`;
+}
+function digilocker() {
+  const m = document.createElement("div"); m.className = "modal";
+  m.innerHTML = `<div class="sheet"><div class="hd">🔒 DigiLocker <span style="font-weight:400;opacity:.8;font-size:12px">(simulated)</span></div><div class="bd" id="dl"></div></div>`;
+  document.body.appendChild(m);
+  const dl = $("#dl", m);
+  const close = () => m.remove();
+  const ask = () => {
+    dl.innerHTML = `<p style="margin:0 0 4px;font-weight:600">Sign in to your account</p><p class="note" style="margin:0 0 8px">Tideway is requesting your Aadhaar card.</p>
+      <label class="f" for="aad">Aadhaar number</label><div class="in"><input id="aad" name="aadhaar" inputmode="numeric" maxlength="14" placeholder="XXXX XXXX XXXX"></div>
+      <div class="err" id="derr"></div><button class="btn" id="dgo">Next</button><p class="note"><button class="link" id="dx">Cancel</button></p>`;
+    $("#aad", m).focus();
+    $("#dx", m).onclick = close;
+    $("#dgo", m).onclick = async () => {
+      const id = $("#aad", m).value.replace(/\s/g, "");
+      const r = await KYC.api("/api/verify/aadhaar", { id_number: id });
+      if (!r.ok) return ($("#derr", m).textContent = r.error);
+      if (S.panLast4 && S.panLast4 !== id.slice(-4)) return ($("#derr", m).textContent = "This Aadhaar is not linked to the PAN you entered.");
+      sendOtp("UIDAI SMS", "your Aadhaar-linked mobile");
+      otp(id, r);
+    };
+  };
+  const otp = (id, rec) => {
+    dl.innerHTML = `<p style="margin:0 0 10px">Enter the OTP sent to your Aadhaar-linked mobile.</p>${otpBoxes("dotp")}<div class="err" id="derr"></div><button class="btn" id="dgo">Verify</button>`;
+    const val = wireOtp("dotp");
+    $("#dgo", m).onclick = () => { if (val() !== S.pendingOtp) return ($("#derr", m).textContent = "Invalid OTP."); consent(id, rec); };
+  };
+  const consent = (id, rec) => {
+    dl.innerHTML = `<p style="margin:0 0 8px;font-weight:600">Please provide your consent</p><p class="note" style="margin:0 0 10px">Tideway is requesting access to the following documents from DigiLocker:</p>
+      <label class="chk"><input type="checkbox" checked disabled> Aadhaar Card (UIDAI)</label>
+      <label class="chk"><input type="checkbox" checked disabled> PAN Verification Record (Income Tax)</label>
+      <button class="btn" id="dgo">Allow</button><p class="note"><button class="link" id="dx">Deny</button></p>`;
+    $("#dx", m).onclick = close;
+    $("#dgo", m).onclick = () => {
+      if (S.panName && S.panName.toLowerCase() !== rec.name.toLowerCase()) { close(); $("#err").textContent = "The name on Aadhaar doesn't match your PAN. Update one of them and try again."; return; }
+      S.form.id_number = id; S.form.name = rec.name; S.form.gender = rec.gender; S.form.address = rec.address || "";
+      S.aadhaar = rec; S.checks.digilocker_aadhaar = true; close(); stepAadhaar();
+    };
+  };
+  ask();
+}
+
+// ---------- 5. Personal details ----------
+function stepPersonal() {
+  const f = S.form;
+  const opt = (arr, v) => arr.map((o) => `<option ${o === v ? "selected" : ""}>${o}</option>`).join("");
+  layout(`<h1>Personal details</h1><p>SEBI requires these as part of your KYC. They are reported to the KYC registration agency (KRA).</p>${ART}`,
+    `<label class="f" style="margin-top:0">Name (from Aadhaar)</label><div class="in"><input readonly value="${esc(f.name)}"></div>
+     <label class="f">Marital status</label><div class="seg">${["Single", "Married"].map((v) => `<label><input type="radio" name="marital" value="${v}" ${f.marital === v ? "checked" : ""}><span>${v}</span></label>`).join("")}</div>
+     <div class="row2"><div><label class="f" for="father">Father's name</label><div class="in"><input id="father" name="father" value="${esc(f.father)}"></div></div>
+     <div><label class="f" for="mother">Mother's name</label><div class="in"><input id="mother" name="mother" value="${esc(f.mother)}"></div></div></div>
+     <div class="row2"><div><label class="f" for="income">Annual income</label><div class="in"><select id="income" name="income"><option value="">Select</option>${opt(["Below 1 lakh", "1-5 lakh", "5-10 lakh", "10-25 lakh", "25 lakh-1 crore", "Above 1 crore"], f.income)}</select></div></div>
+     <div><label class="f" for="occupation">Occupation</label><div class="in"><select id="occupation" name="occupation"><option value="">Select</option>${opt(["Private sector", "Public sector", "Government service", "Business", "Professional", "Student", "Retired", "Housewife", "Others"], f.occupation)}</select></div></div></div>
+     <label class="f">Trading experience</label><div class="seg">${["New", "1-5 years", "5-10 years", "10+ years"].map((v) => `<label><input type="radio" name="exp" value="${v}" ${f.exp === v ? "checked" : ""}><span>${v}</span></label>`).join("")}</div>
+     <label class="chk"><input type="checkbox" id="pep" ${f.pep === false ? "checked" : ""}> I am not a politically exposed person (PEP) or related to one</label>
+     <label class="chk"><input type="checkbox" id="tax" ${f.tax ? "checked" : ""}> I am an Indian citizen and a tax resident of India only</label>
+     <div class="err" id="err"></div><button class="btn" id="go">Continue</button>`);
+  $("#go").onclick = () => {
+    const v = (id) => $("#" + id).value.trim();
+    const marital = $("input[name=marital]:checked")?.value, exp = $("input[name=exp]:checked")?.value;
+    if (!marital || !exp || !v("father") || !v("mother") || !v("income") || !v("occupation")) return ($("#err").textContent = "Please fill in all the details.");
+    if (!$("#pep").checked || !$("#tax").checked) return ($("#err").textContent = "Please confirm both declarations to continue online.");
+    Object.assign(f, { marital, exp, father: v("father"), mother: v("mother"), income: v("income"), occupation: v("occupation"), pep: false, tax: true });
+    next();
+  };
+}
+
+// ---------- 6. Webcam verification (IPV) ----------
+let stream = null;
+function stopCam() { stream?.getTracks().forEach((t) => t.stop()); stream = null; }
+const CAM_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>`;
+function geoText() {
+  return S.geo ? `📍 Location captured (${S.geo.lat.toFixed(2)}, ${S.geo.lon.toFixed(2)})` : S.geoSkipped ? "📍 Location unavailable — flagged for review" : "📍 Location will be requested";
+}
+function stepIpv() {
+  layout(`<h1>Take a live photo</h1><p>SEBI requires in-person verification. We take a live photo through your camera; uploading a photo isn't allowed.</p>`,
+    `<div class="stage">
+       <div class="cam" id="cam">${S.selfie ? `<img src="${S.selfie}" alt="Captured photo"><div class="tag">✓ Photo captured</div>` : `<div class="idle">${CAM_ICON}Camera is off</div>`}</div>
+       <div><ul class="tips"><li>Sit in a well-lit place</li><li>Look straight at the camera</li><li>Remove glasses, caps and masks</li><li>Keep your face inside the oval</li></ul>
+       <p class="geo" id="geo">${geoText()}</p></div>
+     </div>
+     <div class="err" id="err"></div>
+     <div style="display:flex;gap:12px;flex-wrap:wrap"><button class="btn" id="go">${S.selfie ? "Continue" : "Start camera"}</button>${S.selfie ? `<button class="btn ghost" id="retake">Retake</button>` : ""}</div>`);
+  if (S.selfie) { $("#go").onclick = () => { stopCam(); next(); }; $("#retake").onclick = () => { S.selfie = null; S.frames = []; stepIpv(); }; return; }
+  $("#go").onclick = startCam;
+}
+async function startCam() {
+  $("#err").textContent = "";
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 } }, audio: false });
+  } catch { return ($("#err").textContent = "We couldn't access your camera. Allow camera access in your browser and try again."); }
+  S.camera = await KYC.cameraLabels(stream);
+  $("#cam").innerHTML = `<video autoplay playsinline muted></video><div class="ring"></div><div class="tag" id="ctag">Position your face inside the oval</div>`;
+  const video = $("#cam video"); video.srcObject = stream; await video.play();
+  locate();
+  $("#go").textContent = "Capture"; $("#go").onclick = async () => {
+    if (!S.geo && !S.geoSkipped) return ($("#err").textContent = "Allow location access to continue. Waiting for your location...");
+    $("#go").disabled = true; S.frames = [];
+    for (let i = 0; i < 4; i++) { $("#ctag").textContent = `Hold still… ${4 - i}`; S.frames.push(await KYC.toJpeg(video, 640, .82)); await new Promise((r) => setTimeout(r, 400)); }
+    S.selfie = await KYC.toJpeg(video, 1280); stopCam(); S.checks.webcam_ipv = true; stepIpv();
+  };
+}
+function locate() {
+  if (!navigator.geolocation) { S.geoSkipped = true; return; }
+  navigator.geolocation.getCurrentPosition(
+    (p) => { S.geo = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy) }; S.checks.location = true; const g = $("#geo"); if (g) g.textContent = geoText(); },
+    () => { S.geoSkipped = true; const g = $("#geo"); if (g) g.textContent = geoText(); },
+    { timeout: 8000 });
+}
+
+// ---------- 7. Signature ----------
+function stepSignature() {
+  layout(`<h1>Your signature</h1><p>Sign the way you sign on cheques and official documents. It's added to your account opening form.</p>${ART}`,
+    `<canvas class="sig" id="sig"></canvas><p class="note" style="display:flex;justify-content:space-between"><span>Use your mouse, trackpad or finger</span><button class="link" id="clr">Clear</button></p>
+     <div class="err" id="err"></div><button class="btn" id="go">Continue</button>`);
+  const c = $("#sig"), g = c.getContext("2d");
+  const fit = () => { const r = c.getBoundingClientRect(); c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio; g.scale(devicePixelRatio, devicePixelRatio); g.lineWidth = 2.4; g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#151a30"; };
+  fit();
+  let drawing = false, ink = 0;
+  const pt = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  c.onpointerdown = (e) => { drawing = true; c.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...pt(e)); };
+  c.onpointermove = (e) => { if (!drawing) return; g.lineTo(...pt(e)); g.stroke(); ink++; };
+  c.onpointerup = () => (drawing = false);
+  $("#clr").onclick = () => { g.clearRect(0, 0, c.width, c.height); ink = 0; };
+  $("#go").onclick = () => { if (ink < 25) return ($("#err").textContent = "Please draw your full signature."); S.sig = c.toDataURL("image/png"); S.checks.signature = true; next(); };
+}
+
+// ---------- 8. Documents ----------
+function stepDocs() {
+  layout(`<h1>Upload proof of your identity</h1><p>A clear photo or scan. All four corners visible, no blur or glare, under 5 MB.</p>`,
+    `<label class="doc ${S.card ? "done" : ""}"><span class="ic">🪪</span><span><b>PAN card</b><span>${S.card ? "Uploaded · tap to replace" : "Required · front side, JPG or PNG"}</span></span><span class="go">${S.card ? "✓ Done" : "›"}</span><input type="file" id="file" accept="image/jpeg,image/png"></label>
+     ${S.card ? `<div class="preview"><img src="${S.card}" alt="PAN card preview"></div>` : ""}
+     <label class="doc ${S.income ? "done" : ""}"><span class="ic">📄</span><span><b>Income proof</b><span>${S.income ? esc(S.income) : "Optional · only for F&amp;O trading · bank statement, ITR, salary slip"}</span></span><span class="go">${S.income ? "✓ Added" : "›"}</span><input type="file" id="inc" accept="image/*,application/pdf"></label>
+     <div class="err" id="err"></div><button class="btn" id="go">Continue</button>`);
+  $("#file").onchange = async (e) => { const f = e.target.files[0]; if (!f) return; if (f.size > 5e6) return ($("#err").textContent = "File is larger than 5 MB."); S.card = await KYC.toJpeg(f, 1600, .9); stepDocs(); };
+  $("#inc").onchange = (e) => { if (e.target.files[0]) { S.income = e.target.files[0].name; stepDocs(); } };
+  $("#go").onclick = () => { if (!S.card) return ($("#err").textContent = "Upload your PAN card to continue."); S.checks.pan_card_upload = true; next(); };
+}
+
+// ---------- 9. eSign + submit ----------
+function stepEsign() {
+  const f = S.form;
+  layout(`<h1>Review &amp; eSign</h1><p>Check your details, then sign the account opening form digitally with an Aadhaar OTP. No paper or courier needed.</p>`,
+    `<div class="vcard"><div style="display:flex;gap:12px;align-items:center">${S.selfie ? `<img src="${S.selfie}" style="width:64px;height:64px;object-fit:cover;border-radius:12px">` : ""}<div><b>${esc(f.name)}</b><br><span class="note" style="margin:0">PAN ${esc(f.pan)} · Aadhaar XXXX ${esc(f.id_number?.slice(-4))}</span></div>${S.sig ? `<img src="${S.sig}" style="margin-left:auto;width:120px;height:56px;object-fit:contain">` : ""}</div><dl>
+       <dt>Date of birth</dt><dd>${esc(f.dob)}</dd><dt>Mobile</dt><dd>+91 ${esc(f.phone)}</dd><dt>Email</dt><dd>${esc(f.email)}</dd>
+       <dt>Address</dt><dd>${esc(f.address)}</dd><dt>Father / Mother</dt><dd>${esc(f.father)} / ${esc(f.mother)}</dd>
+       <dt>Income</dt><dd>${esc(f.income)}, ${esc(f.occupation)}</dd></dl></div>
+     <label class="chk"><input type="checkbox" id="agree"> I confirm the details are correct and authorise Tideway to submit my KYC to the KRA and CDSL.</label>
+     <div class="err" id="err"></div><button class="btn" id="go">eSign with Aadhaar OTP</button>`);
+  $("#go").onclick = () => {
+    if (!$("#agree").checked) return ($("#err").textContent = "Please confirm the declaration.");
+    sendOtp("UIDAI SMS (eSign)", "your Aadhaar-linked mobile");
+    $("#go").outerHTML = `<p class="sub" style="margin:18px 0 10px">Enter the eSign OTP sent to your Aadhaar-linked mobile.</p>${otpBoxes("sotp")}<div class="err" id="err2"></div><button class="btn" id="sgo">Sign &amp; submit</button>`;
+    const val = wireOtp("sotp");
+    $("#sgo").onclick = async () => {
+      if (val() !== S.pendingOtp) return ($("#err2").textContent = "Invalid OTP.");
+      S.checks.esign = true; renderSteps(); $("#sgo").disabled = true; $("#sgo").textContent = "Submitting…";
+      submit().catch((e) => { $("#err2").textContent = "Couldn't submit: " + e.message; $("#sgo").disabled = false; $("#sgo").textContent = "Sign & submit"; });
+    };
+  };
+}
+
+/** Sends the application to our server, which forwards it to TrueID Shield's partner API
+ * (POST /api/partner/v1/applications) with the Tideway partner key. Payload shape: clients/README.md. */
+async function submit() {
+  const f = S.form;
+  const payload = {
+    reference: "TW" + Date.now().toString(36).toUpperCase(),
+    form: { name: f.name, dob: f.dob, gender: f.gender, id_number: f.id_number, phone: f.phone, email: f.email, pan: f.pan, address: f.address,
+      pincode: (f.address.match(/\b\d{6}\b/) || [""])[0] },
+    device: { device_id: await KYC.deviceId("Tideway~"), user_agent: navigator.userAgent, camera_labels: S.camera.labels, active_camera: S.camera.active,
+      geo: S.geo },
+    telemetry: tel.snapshot(),
+    liveness: { performed: true, passed: true, challenges: ["ipv_live_capture"], virtual_camera: S.camera.virtual },
+    capture: { card: "upload_pan_card", selfie: "live_webcam_ipv", signature: "drawn" },
+    partner_checks: S.checks,
+  };
+  const r = await fetch("/api/kyc/submit", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ payload, card: S.card, selfie: S.selfie, frames: S.frames }) }).then((x) => x.json());
+  if (!r.application_id) throw new Error(r.detail || "unknown error");
+  S.appId = r.application_id; done();
+}
+
+function done() {
+  renderSteps(true);
+  const timeline = (state) => `<ol class="timeline">
+      <li class="ok"><i>✓</i><div><b>Application submitted</b><span>Application number ${esc(S.appId)}</span></div></li>
+      <li class="${state === "run" ? "run" : "ok"}"><i>${state === "run" ? "" : "✓"}</i><div><b>Identity checks</b><span>${state === "run" ? "Verifying your documents and photo…" : "Completed"}</span></div></li>
+      <li class="${state === "approved" ? "run" : ""}"><i></i><div><b>Account activation</b><span>${state === "approved" ? "Client ID and login by email within 24–72 hours" : state === "review" ? "After our team's review" : state === "declined" ? "Not started" : "Next"}</span></div></li>
+    </ol>`;
+  layout(`<h1>Application submitted</h1><p>Keep your application number handy to track your application.</p>`,
+    `<div class="result"><div class="badge" style="background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 0 0 10px var(--accent-soft)">⏳</div><h2 style="font-size:20px">Verifying your details</h2><p class="sub">This usually takes a few seconds.</p>${timeline("run")}</div>`);
+  renderSteps(true);
+  const poll = async () => {
+    const r = await fetch(`/api/kyc/status/${S.appId}`).then((x) => x.json()).catch(() => ({}));
+    if (r.status !== "completed") return setTimeout(poll, 1500);
+    const o = r.outcome || "review";
+    const msg = {
+      approved: ["✓", "Your account is being opened", "Your KYC is verified. You'll receive your client ID and login details by email within 24–72 hours."],
+      review: ["!", "Your application is under review", "Our team needs to check a few details. We'll email you within 2 working days, or call you if we need anything else."],
+      declined: ["✕", "We couldn't open your account", "We couldn't verify your details. Please write to support with your application number if you think this is a mistake."],
+    }[o];
+    $(".result").innerHTML = `<div class="badge ${o === "approved" ? "" : o}">${msg[0]}</div><h2 style="font-size:20px">${msg[1]}</h2><p class="sub">${msg[2]}</p>${timeline(o)}
+      <button class="btn ghost" onclick="location.reload()">Start a new application</button>`;
+  };
+  poll();
+}
+
+const RENDER = [stepMobile, stepEmail, stepPan, stepAadhaar, stepPersonal, stepIpv, stepSignature, stepDocs, stepEsign];
+function render() { RENDER[S.step](); }
+
+// ---------- TrueID connection status + demo-mode test data ----------
+(async () => {
+  const m = await fetch("/api/mode").then((r) => r.json()).catch(() => null);
+  const sh = $("#shield");
+  if (m) {
+    sh.classList.toggle("live", m.mode === "remote");
+    sh.innerHTML = `<span class="led"></span><span><b>Protected by TrueID Shield</b><br>${m.mode === "remote" ? "Live fraud checks connected" : "Demo mode · backend not connected"}</span>`;
+  }
+  const ids = await fetch("/api/demo-identities").then((r) => r.json()).catch(() => []);
+  if (!ids.length) return;
+  const d = $("#demo"); d.hidden = false;
+  d.innerHTML = `<button id="dbtn">Demo mode · Test data</button><div class="panel" id="dp" hidden><b>Test identities</b> (demo mode only)
+    <table>${ids.map((i) => `<tr><td>${esc(i.name)}<br><span style="color:#999">DOB ${esc(i.dob)}</span></td><td>PAN ${esc(i.pan)}<br>Aadhaar ${esc(i.id_number)}</td></tr>`).join("")}</table>
+    <p style="color:#999;margin:8px 0 0">OTPs appear on screen. Any valid mobile number and email work.</p></div>`;
+  $("#dbtn").onclick = () => ($("#dp").hidden = !$("#dp").hidden);
+})();
+
+renderSteps(); render();
+</script>
+</body>
+</html>

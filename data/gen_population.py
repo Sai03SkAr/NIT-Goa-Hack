@@ -218,7 +218,7 @@ def card_fields(p: dict) -> dict:
 
 
 def qr_payload(f: dict) -> dict:
-    return {"n": f["name"].upper(), "d": f["dob"], "g": f["gender"], "l4": f["id_number"][-4:], "i": f["issue_date"]}
+    return {"n": f["name"].upper(), "d": f["dob"], "g": f["gender"], "id": f["id_number"], "i": f["issue_date"]}
 
 
 # ---------------------------------------------------------------- main generation
@@ -248,7 +248,7 @@ def main(n: int):
         reg_face = GEN / "registry_faces" / f"{cid}.jpg"
         portrait_crop(imgs[0]).save(reg_face, quality=92)
         reg["uidai"][idn] = {"name": name, "dob": p["dob"], "gender": g, "face": str(reg_face.relative_to(GEN))}
-        reg["pan"][p["pan"]] = {"name": name, "dob": p["dob"], "id_last4": idn[-4:]}
+        reg["pan"][p["pan"]] = {"name": name, "dob": p["dob"], "subject": idn}
         if p["phone"] not in reg["telecom"]:
             sd = sim_days if sim_days is not None else int(rng.uniform(400, 4000))
             reg["telecom"][p["phone"]] = {"activated": dmy(TODAY - timedelta(days=sd)), "subscriber": sim_name or name}

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Send, Wrench } from "lucide-react";
-import { Section } from "@/components/ui";
+import { Section, readable } from "@/components/ui";
 import { post } from "@/lib/api";
 
 type Msg = { role: "user" | "assistant"; text: string; source?: string; tools?: { tool: string; args: Record<string, unknown>; result: unknown }[] };
@@ -20,7 +20,7 @@ export default function Chat() {
     setQ(""); setBusy(true);
     try {
       const r = await post<{ answer: string; source: string; tools: Msg["tools"] }>("/api/chat", { question });
-      setMsgs((m) => [...m, { role: "assistant", text: r.answer, source: r.source, tools: r.tools }]);
+      setMsgs((m) => [...m, { role: "assistant", text: readable(r.answer), source: r.source, tools: r.tools }]);
     } catch (e) {
       setMsgs((m) => [...m, { role: "assistant", text: `Error: ${e}` }]);
     } finally { setBusy(false); }
@@ -42,7 +42,7 @@ export default function Chat() {
           {msgs.map((m, i) => (
             <div key={i} className={m.role === "user" ? "ml-auto max-w-[80%] rounded-xl bg-brand-soft px-4 py-2.5 text-sm" : "max-w-[90%] text-sm leading-relaxed"}>
               <p>{linkIds(m.text)}</p>
-              {m.role === "assistant" && m.source && <div className="mt-1 text-[11px] text-dim">answered from {m.source === "llm" ? "LLM over tool results" : "tool results (template)"}</div>}
+              {m.role === "assistant" && m.source && <div className="mt-1 text-[11px] text-dim">{m.source === "llm" ? "Worded by Groq from the lookup results below; it cannot add findings" : "Built from the lookup results (no AI)"}</div>}
               {!!m.tools?.length && (
                 <details className="mt-2 rounded-lg border border-line p-2 text-xs text-muted">
                   <summary className="flex cursor-pointer items-center gap-1.5"><Wrench className="size-3" />{m.tools.length} tool call{m.tools.length > 1 ? "s" : ""}</summary>

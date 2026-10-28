@@ -39,10 +39,12 @@ class History:
         self.parent: list[int] = []
         self.members: dict[int, list[int]] = {}
         self.edges: list[tuple[int, int, dict]] = []
+        self.media: list[int] = []
+        self.media_owner: list[int] = []
 
     # ------------------------------------------------------------ record
     @staticmethod
-    def record(app: dict, face_emb) -> dict:
+    def record(app: dict, face_emb, media: int | None = None) -> dict:
         f, d = app["form"], app["device"]
         stem, num = email_stem(f.get("email", ""))
         return {"app_id": app["app_id"], "ts": datetime.fromisoformat(app["ts"]) if isinstance(app["ts"], str) else app["ts"],
@@ -51,8 +53,8 @@ class History:
                           "phone": clean(f.get("phone")), "address": clean(f"{f.get('address', '')}|{f.get('pincode', '')}"),
                           "ip": clean(d.get("ip"))},
                 "stem": stem if num is not None and len(stem) >= 3 else None, "num": num,
-                "face": None if face_emb is None else np.asarray(face_emb, np.float32),
-                "ks": np.asarray(app["telemetry"]["keystroke_vec"], np.float32)}
+                "face": None if face_emb is None else np.asarray(face_emb, np.float32), "media": media,
+                "ks": np.asarray((app.get("telemetry") or {}).get("keystroke_vec") or [0.0] * 12, np.float32)}  # zeros never link
 
     def _find(self, i):
         while self.parent[i] != i:
@@ -90,6 +92,23 @@ class History:
         same = len(hit) - len(diff)
         return {"diff_name": len(diff), "same_name": same, "max_sim": float(sims.max()),
                 "matches": [self.apps[i]["app_id"] for i in diff[:10]]}
+
+    def media_matches(self, h: int | None, max_bits: int = 6) -> int:
+        """Earlier applications whose selfie is the same picture (Hamming distance of 64-bit dHash)."""
+        if h is None or not self.media:
+            return 0
+        x = np.array(self.media, dtype=np.uint64) ^ np.uint64(h)
+        return int((np.bitwise_count(x) <= max_bits).sum())
+
+    def device_people(self, device, ts, name, window: timedelta = timedelta(days=7)) -> int:
+        """Different people (name and surname both differ) onboarded from this device in the window: a handler
+        bringing real account holders (mule herding). Same-surname households are left out."""
+        if device is None:
+            return 0
+        sur = name.split()[-1].upper() if name else ""
+        people = {self.apps[i]["name"] for i in self.by_attr.get(("device", device), [])
+                  if ts - window <= self.apps[i]["ts"] <= ts}
+        return sum(1 for n in people if name_sim(n, name) < 0.8 and n.split()[-1].upper() != sur)
 
     def keystroke_matches(self, vec, name) -> dict:
         if not self.ks:
@@ -156,6 +175,8 @@ class History:
         if rec["face"] is not None:
             self.faces.append(rec["face"]); self.face_owner.append(i)
         self.ks.append(rec["ks"]); self.ks_owner.append(i)
+        if rec.get("media") is not None:
+            self.media.append(int(rec["media"])); self.media_owner.append(i)
         if rec["stem"]:
             self.stems[rec["stem"]].append((i, rec["num"]))
         for j, kinds in edges.items():

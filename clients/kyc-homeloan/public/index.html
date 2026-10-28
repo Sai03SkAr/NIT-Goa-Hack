@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kestrel Home Finance · Home Loan KYC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --side: #0b1f24; --side-2: #12303a; --side-ink: #c7d8db; --side-muted: #7f9a9f;
+    --accent: #0f766e; --accent-2: #14b8a6; --accent-d: #0b5f58; --accent-soft: #e6f6f4;
+    --ink: #13202a; --ink-2: #48606a; --muted: #87979e; --line: #e2e8ea; --bg: #f3f6f6; --card: #fff;
+    --ok: #16a34a; --ok-soft: #e8f7ee; --err: #d93636; --err-soft: #fdeeee; --warn: #d97706; --warn-soft: #fff6e5; --na: #9aa6ab; --na-soft: #f0f3f4;
+    --r: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 Inter, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+
+  .shell { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; }
+  .side { background: radial-gradient(120% 60% at 0% 0%, #17414a 0%, var(--side) 60%); color: var(--side-ink); padding: 24px 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; letter-spacing: .08em; font-size: 14px; }
+  .brand svg { width: 30px; height: 30px; }
+  .side h3 { margin: 0; color: #fff; font-size: 18px; font-weight: 600; }
+  .side .lede { margin: 4px 0 0; font-size: 13px; color: var(--side-muted); }
+  .rail { list-style: none; margin: 0; padding: 0; }
+  .rail li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; padding: 4px 0; position: relative; }
+  .rail li:not(:last-child)::after { content: ""; position: absolute; left: 13px; top: 32px; bottom: -4px; width: 2px; background: #24454e; border-radius: 2px; }
+  .rail li.done:not(:last-child)::after { background: linear-gradient(var(--accent-2), var(--accent)); }
+  .rail .dot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--side-2); border: 1.5px solid #2c525c; color: var(--side-muted); }
+  .rail li.done .dot { background: linear-gradient(135deg, var(--accent-2), var(--accent)); border-color: transparent; color: #fff; }
+  .rail li.flag .dot { background: var(--warn); border-color: transparent; color: #fff; }
+  .rail li.on .dot { border-color: var(--accent-2); color: #fff; box-shadow: 0 0 0 4px rgba(20,184,166,.2); }
+  .rail b { display: block; font-size: 13.5px; font-weight: 500; line-height: 1.3; }
+  .rail span { font-size: 11.5px; color: var(--side-muted); }
+  .rail li.on b { color: #fff; }
+  .shield { margin-top: auto; display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--side-muted); background: rgba(255,255,255,.05); border-radius: 12px; padding: 10px 12px; }
+  .shield .led { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(217,119,6,.25); flex: none; }
+  .shield.live .led { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+  .shield b { color: var(--side-ink); font-weight: 500; }
+
+  .main { padding: 24px clamp(16px, 3vw, 40px) 60px; min-width: 0; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 22px; max-width: 1120px; margin: 0 auto; align-items: start; }
+  @media (max-width: 1240px) { .cols { grid-template-columns: minmax(0, 1fr); max-width: 760px; } }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 0 auto 18px; max-width: 1120px; }
+  @media (max-width: 1240px) { .topbar { max-width: 760px; } }
+  .count { font-size: 13px; color: var(--muted); } .count b { color: var(--ink); font-weight: 600; }
+  .bar { flex: 1; max-width: 360px; height: 6px; background: #dfe7e8; border-radius: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); border-radius: 6px; transition: width .35s; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 1px 2px rgba(16,40,48,.04), 0 12px 32px -12px rgba(16,40,48,.12); overflow: hidden; animation: rise .3s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .card .head { padding: 26px 30px 0; }
+  .card .head h1 { margin: 0 0 6px; font-size: 25px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
+  .card .head p { margin: 0; color: var(--ink-2); }
+  .card .head .why { display: flex; gap: 8px; margin-top: 12px; font-size: 12.5px; color: var(--ink-2); background: var(--accent-soft); border-radius: 10px; padding: 8px 12px; }
+  .card .body { padding: 20px 30px 28px; }
+  @media (max-width: 560px) { .card .head { padding: 20px 18px 0; } .card .body { padding: 16px 18px 22px; } .card .head h1 { font-size: 21px; } }
+  .sec { font-size: 13px; font-weight: 600; color: var(--ink); margin: 22px 0 4px; text-transform: uppercase; letter-spacing: .05em; }
+  .sec:first-child { margin-top: 0; }
+
+  label.f { display: block; font-size: 13px; font-weight: 500; color: var(--ink-2); margin: 14px 0 6px; }
+  .in { display: flex; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; transition: border-color .15s, box-shadow .15s; }
+  .in:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(15,118,110,.12); }
+  .in .pre { padding: 11px 13px; border-right: 1px solid var(--line); color: var(--ink-2); font-size: 14px; display: flex; align-items: center; }
+  .in input, .in select { flex: 1; border: 0; outline: 0; padding: 11px 13px; font: inherit; color: var(--ink); background: transparent; min-width: 0; border-radius: 12px; }
+  .in input[readonly] { color: var(--ink-2); background: #f6f8f8; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; } .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 14px; }
+  @media (max-width: 560px) { .row2, .row3 { grid-template-columns: 1fr; } }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff; border: 0; border-radius: 12px; padding: 12px 26px; font: 600 15px Inter, sans-serif; cursor: pointer; min-width: 180px; box-shadow: 0 8px 20px -8px rgba(15,118,110,.55); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+  .btn.ghost { background: #fff; color: var(--accent); border: 1.5px solid #b9e2dd; box-shadow: none; }
+  @media (max-width: 560px) { .btn { width: 100%; } }
+  .link { background: none; border: 0; color: var(--accent); font: 500 13px Inter, sans-serif; cursor: pointer; padding: 0; }
+  .err { color: var(--err); font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 12px; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--ink-2); margin-top: 12px; }
+  .chk input { margin-top: 4px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+  .seg { display: flex; flex-wrap: wrap; gap: 8px; }
+  .seg label { border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 14px; font-size: 14px; cursor: pointer; }
+  .seg input { display: none; }
+  .seg label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-d); }
+  .otp { display: flex; gap: 8px; }
+  .otp input { width: 48px; height: 54px; text-align: center; font-size: 21px; font-weight: 600; border: 1.5px solid var(--line); border-radius: 12px; outline: 0; }
+  .otp input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(15,118,110,.12); }
+  @media (max-width: 400px) { .otp input { width: 40px; height: 48px; } }
+  .emi { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+  .emi div { background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; } .emi span { font-size: 12px; color: var(--ink-2); } .emi b { display: block; font-size: 18px; }
+  @media (max-width: 480px) { .emi { grid-template-columns: 1fr; } }
+
+  /* verification results: one row per check */
+  .checks { margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .checks h4 { margin: 0; padding: 10px 14px; font-size: 12.5px; font-weight: 600; background: #f7fafa; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  .crow { display: grid; grid-template-columns: 24px 1fr; gap: 10px; padding: 9px 14px; font-size: 13.5px; border-top: 1px solid #f0f3f4; }
+  .crow:first-of-type { border-top: 0; }
+  .crow i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; }
+  .crow small { display: block; color: var(--muted); font-size: 12px; }
+  .s-PASS i { background: var(--ok-soft); color: var(--ok); } .s-FAIL i { background: var(--err-soft); color: var(--err); }
+  .s-WARN i { background: var(--warn-soft); color: var(--warn); } .s-UNAVAILABLE i, .s-NOT_PROVIDED i, .s-PENDING i { background: var(--na-soft); color: var(--na); }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+  .tag.PASS { background: var(--ok-soft); color: var(--ok); } .tag.FAIL { background: var(--err-soft); color: var(--err); } .tag.WARN { background: var(--warn-soft); color: var(--warn); } .tag.NA { background: var(--na-soft); color: var(--ink-2); }
+  .spin { width: 16px; height: 16px; border: 2px solid #cfe7e4; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; vertical-align: -3px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* uploads */
+  .doc { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; border: 1.5px dashed #c8d6d8; border-radius: 14px; padding: 14px 16px; cursor: pointer; margin-top: 12px; background: #fbfdfd; }
+  .doc:hover { border-color: var(--accent-2); }
+  .doc .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); display: grid; place-items: center; font-size: 20px; }
+  .doc b { display: block; font-weight: 600; font-size: 14.5px; } .doc span { font-size: 12.5px; color: var(--muted); }
+  .doc.done { border-style: solid; border-color: #bfe8cf; background: #f7fdf9; } .doc input { display: none; }
+  .preview { margin-top: 10px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); max-width: 300px; } .preview img { display: block; width: 100%; }
+
+  /* camera stage */
+  .stage { background: #08161a; border-radius: 18px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 16px; color: #c7d8db; }
+  @media (max-width: 680px) { .stage { grid-template-columns: 1fr; } }
+  .cam { position: relative; width: 100%; aspect-ratio: 4/3; background: #030a0c; border-radius: 14px; overflow: hidden; display: grid; place-items: center; }
+  .cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); } .cam img { width: 100%; height: 100%; object-fit: cover; }
+  .cam .ring { position: absolute; inset: 10% 28%; border: 3px solid rgba(255,255,255,.85); border-radius: 50%; box-shadow: 0 0 0 999px rgba(3,10,12,.45); }
+  .cam .tag2 { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); color: #fff; font-size: 13px; background: rgba(11,31,36,.85); padding: 6px 14px; border-radius: 20px; white-space: nowrap; }
+  .cam .idle { color: #7f9a9f; font-size: 13px; text-align: center; }
+  .tips { list-style: none; margin: 0; padding: 0; font-size: 13px; display: grid; gap: 10px; align-content: start; }
+  .tips li { display: flex; gap: 10px; } .tips li::before { content: "✓"; width: 20px; height: 20px; flex: none; border-radius: 50%; background: rgba(20,184,166,.2); color: #5eead4; display: grid; place-items: center; font-size: 11px; }
+  canvas.sig { width: 100%; height: 170px; border: 1.5px dashed #c8d6d8; border-radius: 14px; background: repeating-linear-gradient(#fff 0 42px, #eef3f3 42px 43px); touch-action: none; cursor: crosshair; display: block; }
+
+  /* cross-check panel */
+  .xpanel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; position: sticky; top: 20px; }
+  @media (max-width: 1240px) { .xpanel { position: static; } }
+  .xpanel h3 { margin: 0; font-size: 15px; } .xpanel > p { margin: 2px 0 10px; font-size: 12.5px; color: var(--muted); }
+  .xrow { padding: 10px 0; border-top: 1px solid #eef2f3; }
+  .xrow > div:first-child { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .chip { font-size: 11.5px; padding: 2px 8px; border-radius: 10px; background: var(--na-soft); color: var(--ink-2); }
+  .chip.PASS { background: var(--ok-soft); color: #11743a; } .chip.FAIL { background: var(--err-soft); color: #a32424; } .chip.WARN { background: var(--warn-soft); color: #9a5b04; }
+
+  .vcard { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: linear-gradient(180deg, #fbfdfd, #fff); font-size: 14px; }
+  .vcard dl { display: grid; grid-template-columns: 140px 1fr; gap: 5px 12px; margin: 8px 0 0; } .vcard dt { color: var(--muted); } .vcard dd { margin: 0; }
+  @media (max-width: 480px) { .vcard dl { grid-template-columns: 1fr; gap: 0; } .vcard dd { margin-bottom: 6px; } }
+  .result { text-align: center; } .badge { width: 80px; height: 80px; border-radius: 50%; margin: 4px auto 14px; display: grid; place-items: center; font-size: 34px; color: #fff; background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 0 0 10px #e8f7ee; }
+  .badge.review { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 0 10px #fff4dd; } .badge.declined { background: linear-gradient(135deg, #f87171, #d93636); box-shadow: 0 0 0 10px #fdecec; }
+  .badge.wait { background: linear-gradient(135deg, var(--accent-2), var(--accent)); box-shadow: 0 0 0 10px var(--accent-soft); }
+  .timeline { list-style: none; padding: 0; margin: 20px auto 0; max-width: 440px; text-align: left; }
+  .timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 0 0 16px; position: relative; }
+  .timeline li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 28px; bottom: 2px; width: 2px; background: var(--line); }
+  .timeline i { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 12px; background: var(--bg); border: 1.5px solid var(--line); color: var(--muted); }
+  .timeline li.ok i { background: var(--ok); border-color: var(--ok); color: #fff; } .timeline b { display: block; font-size: 14px; } .timeline span { font-size: 12.5px; color: var(--muted); }
+
+  .modal { position: fixed; inset: 0; background: rgba(8,22,26,.55); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 30; padding: 16px; }
+  .sheet { background: #fff; width: 100%; max-width: 420px; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.3); }
+  .sheet .hd { background: #1d3c78; color: #fff; padding: 14px 18px; font-weight: 600; } .sheet .bd { padding: 18px; } .sheet .btn { width: 100%; }
+  .toast { position: fixed; right: 16px; top: 16px; background: var(--side); color: #fff; font-size: 13.5px; padding: 12px 16px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.25); z-index: 40; max-width: 330px; }
+  .toast b { color: #5eead4; letter-spacing: .14em; font-size: 15px; }
+  .demo { position: fixed; right: 16px; bottom: 16px; z-index: 20; }
+  .demo > button { background: #fff8e6; border: 1px solid #f0d28a; color: #8a6200; border-radius: 20px; padding: 7px 14px; font: 500 12.5px Inter, sans-serif; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .demo .panel { position: absolute; bottom: 42px; right: 0; width: 400px; max-width: calc(100vw - 32px); max-height: 70vh; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 14px; font-size: 12.5px; }
+  .demo .who { border-top: 1px solid #eef2f3; padding: 8px 0; } .demo .who:first-of-type { border-top: 0; }
+  footer { font-size: 12px; color: var(--muted); padding: 22px 0 0; max-width: 1120px; margin: 0 auto; }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; padding: 16px; gap: 12px; }
+    .side .lede, .rail span { display: none; }
+    .rail { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; } .rail li { display: block; padding: 0; } .rail li::after { display: none; } .rail li b { display: none; }
+    .shield { margin-top: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><svg viewBox="0 0 30 30" fill="none"><rect width="30" height="30" rx="9" fill="url(#k)"/><path d="M7 17.5 15 10l8 7.5" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 16v6h10v-6" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><path d="M14 22v-3h2v3" fill="#fff"/><defs><linearGradient id="k" x1="0" y1="0" x2="30" y2="30"><stop stop-color="#14b8a6"/><stop offset="1" stop-color="#0f766e"/></linearGradient></defs></svg>KESTREL HOME FINANCE</div>
+    <div><h3>Home loan KYC</h3><p class="lede">Every step is checked as you go, and every document is cross-checked against the others.</p></div>
+    <ol class="rail" id="rail"></ol>
+    <div class="shield" id="shield"><span class="led"></span><span>Checking identity protection…</span></div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><span class="count" id="count"></span><div class="bar"><i id="bar"></i></div><span class="count" id="ref"></span></div>
+    <div class="cols"><div id="app"></div><aside class="xpanel" id="xpanel"></aside></div>
+    <footer>Kestrel Home Finance is fictional, built for the TrueID Shield demo. Identity, document and fraud checks are provided by TrueID Shield through its partner API.</footer>
+  </main>
+</div>
+<div class="demo" id="demo" hidden></div>
+
+<script src="kyc-common.js"></script>
+<script>
+// ============================================================ state and helpers
+const STEPS = [
+  ["loan", "Your loan", "Amount and consent"], ["contact", "Mobile & email", "OTP verified"], ["pan", "PAN", "Income Tax check"],
+  ["aadhaar", "Aadhaar e-KYC", "UIDAI OTP"], ["idcard", "ID card", "Signed-QR check"], ["selfie", "Live selfie", "Head-turn check"],
+  ["address", "Address proof", "Electricity bill"], ["income", "Income", "Salary slip & statement"], ["account", "Repayment account", "Cheque & affordability"],
+  ["esign", "Review & eSign", "Aadhaar OTP"],
+];
+const S = {
+  step: 0, loan: { amount: 3500000, tenure: 20, city: "" }, form: {}, panName: "", panDob: "", panLast4: "",
+  results: {}, docs: {}, inc: {}, acct: {}, bill: {}, selfie: null, frames: [], challenge: null,
+  camera: { labels: [], active: "", virtual: false }, geo: null, sig: null, appId: null, otp: null, ref: "KHF" + Date.now().toString(36).toUpperCase().slice(-6),
+};
+const RATE = 0.085; // indicative annual rate used for EMI and affordability
+const tel = new KYC.Telemetry(); tel.attach(document);
+const $ = (s, r = document) => r.querySelector(s);
+const app = $("#app");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const inr = (n) => "₹" + Math.round(n).toLocaleString("en-IN");
+const val = (id) => ($("#" + id)?.value || "").trim();
+const toast = (html, ms = 9000) => { const t = document.createElement("div"); t.className = "toast"; t.innerHTML = html; document.body.appendChild(t); setTimeout(() => t.remove(), ms); };
+const sendOtp = (channel, to) => { S.otp = KYC.otp(); toast(`Demo ${channel} to ${esc(to)}<br>Your Kestrel verification code is <b>${S.otp}</b>`); };
+const otpBoxes = (id) => `<div class="otp" id="${id}">${Array.from({ length: 6 }, (_, i) => `<input name="${id}${i}" inputmode="numeric" maxlength="1" aria-label="OTP digit ${i + 1}">`).join("")}</div>`;
+function wireOtp(id) {
+  const b = [...document.querySelectorAll(`#${id} input`)];
+  b.forEach((x, i) => {
+    x.addEventListener("input", () => { x.value = x.value.replace(/\D/g, "").slice(-1); if (x.value && b[i + 1]) b[i + 1].focus(); });
+    x.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !x.value && b[i - 1]) b[i - 1].focus(); });
+    x.addEventListener("paste", (e) => { const v = (e.clipboardData.getData("text") || "").replace(/\D/g, "").slice(0, 6); if (v.length === 6) { e.preventDefault(); b.forEach((y, k) => (y.value = v[k])); } });
+  });
+  b[0]?.focus();
+  return () => b.map((x) => x.value).join("");
+}
+
+// names: same idea as backend/app/modules/correlation/fuzzy.py (initials match, small spelling slips allowed)
+const nameToks = (s) => String(s || "").toUpperCase().replace(/[^A-Z ]/g, " ").split(/\s+/).filter(Boolean);
+function lev(a, b) { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length]; }
+function nameSim(a, b) {
+  const A = nameToks(a), B = nameToks(b); if (!A.length || !B.length) return 0;
+  const used = new Set(); let m = 0;
+  for (const x of A) { const j = B.findIndex((y, k) => !used.has(k) && (x === y || (x.length === 1 && y.startsWith(x)) || (y.length === 1 && x.startsWith(y)) || (x.length > 3 && 1 - lev(x, y) / Math.max(x.length, y.length) >= 0.85)));
+    if (j >= 0) { used.add(j); m++; } }
+  return m / Math.max(A.length, B.length);
+}
+const sameName = (a, b) => nameSim(a, b) >= 0.8;
+const daysAgo = (iso) => Math.floor((Date.now() - Date.parse(iso)) / 864e5);
+const near = (a, b, pct) => Math.abs(+a - +b) <= Math.max(+a, +b) * pct;
+const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+/** A check row. status: PASS | FAIL | WARN | UNAVAILABLE | NOT_PROVIDED | PENDING */
+const C = (key, label, status, detail = "") => ({ key, label, status, detail });
+const ICON = { PASS: "✓", FAIL: "✕", WARN: "!", UNAVAILABLE: "–", NOT_PROVIDED: "–", PENDING: "…" };
+function checksBox(title, list, note = "") {
+  if (!list?.length) return "";
+  const bad = list.filter((c) => c.status === "FAIL").length, warn = list.filter((c) => c.status === "WARN").length;
+  const t = bad ? `<span class="tag FAIL">${bad} failed</span>` : warn ? `<span class="tag WARN">${warn} to review</span>` : list.every((c) => c.status === "PASS") ? `<span class="tag PASS">All passed</span>` : `<span class="tag NA">Partly checked</span>`;
+  return `<div class="checks"><h4><span>${title}</span>${t}</h4>${list.map((c) => `<div class="crow s-${c.status}"><i>${ICON[c.status] || "–"}</i><div>${esc(c.label)}${c.detail ? `<small>${esc(c.detail)}</small>` : ""}</div></div>`).join("")}${note ? `<div class="crow s-UNAVAILABLE"><i>i</i><div><small>${note}</small></div></div>` : ""}</div>`;
+}
+const setResult = (step, list) => { S.results[step] = list; renderRail(); renderX(); };
+
+// ============================================================ layout
+function renderRail(all = false) {
+  $("#rail").innerHTML = STEPS.map(([k, n, sub], i) => {
+    const flagged = (S.results[k] || []).some((c) => c.status === "FAIL" || c.status === "WARN");
+    const cls = all || i < S.step ? (flagged ? "done flag" : "done") : i === S.step ? "on" : "";
+    return `<li class="${cls}"><span class="dot">${cls.startsWith("done") ? (flagged ? "!" : "✓") : i + 1}</span><div><b>${n}</b><span>${sub}</span></div></li>`;
+  }).join("");
+  $("#count").innerHTML = all ? "<b>Submitted</b>" : `Step <b>${S.step + 1}</b> of ${STEPS.length}`;
+  $("#bar").style.width = `${Math.round(((all ? STEPS.length : S.step) / STEPS.length) * 100)}%`;
+  $("#ref").textContent = "Application " + S.ref;
+}
+function layout(head, body) { app.innerHTML = `<div class="card"><div class="head">${head}</div><div class="body">${body}</div></div>`; renderRail(); renderX(); }
+function go(i) { S.step = i; render(); window.scrollTo(0, 0); }
+const next = () => go(S.step + 1);
+const nav = (primary = "Continue", back = true) => `<div class="err" id="err"></div><div class="btns"><button class="btn" id="go">${primary}</button>${back && S.step > 0 ? `<button class="btn ghost" id="back">Back</button>` : ""}</div>`;
+function wireBack() { $("#back") && ($("#back").onclick = () => go(S.step - 1)); }
+const err = (m) => { $("#err").textContent = m; return false; };
+
+// ============================================================ cross-checks: every document against the others
+function docStatus(kind, key) { return S.docs[kind]?.checks?.find((c) => c.check === key)?.status; }
+function renderX() {
+  const f = S.form, a = S.inc, b = S.bill, ac = S.acct;
+  const chip = (label, st) => `<span class="chip ${st || ""}">${st === "PASS" ? "✓" : st === "FAIL" ? "✕" : st === "WARN" ? "!" : "·"} ${label}</span>`;
+  const row = (title, chips) => {
+    const sts = chips.map((c) => c[1]).filter(Boolean);
+    const t = sts.includes("FAIL") ? "FAIL" : sts.includes("WARN") ? "WARN" : sts.length && sts.every((s) => s === "PASS") ? "PASS" : "";
+    return `<div class="xrow"><div><span>${title}</span>${t ? `<span class="tag ${t}">${t === "PASS" ? "Consistent" : t === "FAIL" ? "Mismatch" : "Review"}</span>` : `<span class="tag NA">Waiting</span>`}</div><div class="chips">${chips.map(([l, s]) => chip(l, s)).join("")}</div></div>`;
+  };
+  const vs = (x) => (x == null ? undefined : x ? "PASS" : "FAIL");
+  const textOr = (kind, key, typed) => { const s = docStatus(kind, key); return s === "FAIL" ? "FAIL" : typed; };
+  const nm = f.name;
+  const dobCard = docStatus("idcard", "form_consistency");
+  const docsDone = Object.values(S.docs);
+  const integrityBad = docsDone.filter((d) => d.checks.some((c) => ["ai_marker", "editor_tag", "reuse"].includes(c.check) && c.status === "FAIL")).length;
+  $("#xpanel").innerHTML = `<h3>Cross-checks</h3><p>The same person, address, income and account must show up the same way in every document.</p>
+    ${row("Name", [["PAN", nm && S.panName ? vs(sameName(S.panName, nm)) : null], ["Aadhaar", nm ? "PASS" : null], ["ID card", dobCard],
+      ["Bill", b.name ? (b.relation && b.relation !== "Self" ? "WARN" : textOr("bill", "text_name", vs(sameName(b.name, nm)))) : null],
+      ["Salary slip", a.slipName ? textOr("slip", "text_name", vs(sameName(a.slipName, nm))) : null],
+      ["Statement", a.stmtName ? textOr("statement", "text_name", vs(sameName(a.stmtName, nm))) : null],
+      ["Cheque", ac.name ? textOr("cheque", "text_name", vs(sameName(ac.name, nm))) : null]])}
+    ${row("Date of birth", [["PAN", S.panDob ? "PASS" : null], ["Aadhaar", f.dob && S.panDob ? vs(f.dob === S.panDob) : null], ["ID card", dobCard]])}
+    ${row("PAN ↔ Aadhaar link", [["Income Tax", S.link == null ? null : vs(S.link)]])}
+    ${row("Address", [["Declared", f.pincode ? "PASS" : null], ["Bill PIN", b.pincode ? textOr("bill", "text_pincode", vs(b.pincode === f.pincode)) : null],
+      ["Bill age", b.date ? (daysAgo(b.date) <= 60 ? "PASS" : "FAIL") : null]])}
+    ${row("Employer", [["Declared", a.employer ? "PASS" : null], ["Salary slip", a.slipEmployer ? textOr("slip", "text_employer", vs(sameName(a.slipEmployer, a.employer) || a.slipEmployer.toUpperCase() === a.employer.toUpperCase())) : null]])}
+    ${row("Monthly income", [["Declared", a.net ? "PASS" : null], ["Slip net pay", a.slipNet ? textOr("slip", "text_net_pay", vs(near(a.slipNet, a.net, 0.1))) : null],
+      ["Salary credit", a.credit ? textOr("statement", "text_salary_credit", vs(near(a.credit, a.slipNet || a.net, 0.05))) : null]])}
+    ${row("Repayment account", [["Statement", a.stmtAcct ? "PASS" : null], ["Cheque", ac.account ? textOr("cheque", "text_account_no", vs(ac.account === a.stmtAcct)) : null],
+      ["IFSC", ac.ifsc ? vs(IFSC.test(ac.ifsc)) : null]])}
+    ${row("Document integrity", [[`${docsDone.length} checked`, docsDone.length ? "PASS" : null], ...(integrityBad ? [[`${integrityBad} flagged`, "FAIL"]] : [])])}
+    ${row("Face, liveness & behaviour", [["TrueID at submission", S.appId ? "PASS" : null]])}`;
+}
+
+// ============================================================ document upload + check (TrueID)
+async function sharpness(dataUrl) {
+  const img = await new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.src = dataUrl; });
+  const w = Math.min(800, img.naturalWidth), h = Math.round(img.naturalHeight * (w / img.naturalWidth));
+  const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d"); g.drawImage(img, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data, gray = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let s = 0, s2 = 0, n = 0;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; const l = gray[i - 1] + gray[i + 1] + gray[i - w] + gray[i + w] - 4 * gray[i]; s += l; s2 += l * l; n++; }
+  return { w: img.naturalWidth, h: img.naturalHeight, sharp: Math.round(s2 / n - (s / n) ** 2) };
+}
+/** The original bytes, so TrueID can read the file's metadata (AI-generator and editing-software tags). Re-encoding
+ * through a canvas would strip it, so that only happens for files too big to send. */
+const asDataUrl = (file) => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(file); });
+async function checkDoc(kind, file, claims) {
+  const original = file.size <= 7 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(file.type);
+  const data = original ? await asDataUrl(file) : await KYC.toJpeg(file, 1800, 0.9);
+  const quality = await sharpness(data);
+  const r = await fetch("/api/docs/check", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: kind === "idcard" ? "id_card" : { bill: "electricity_bill", slip: "salary_slip", statement: "bank_statement", cheque: "cheque" }[kind],
+      claims, owner: S.form.name || "", file: data, quality }) }).then((x) => x.json()).catch((e) => ({ detail: e.message }));
+  return { data, ...r, checks: r.checks || [{ check: "service", label: "Document check service", status: "UNAVAILABLE", detail: r.detail || "Not reachable" }] };
+}
+const fromDoc = (d) => (d?.checks || []).map((c) => C(c.check, c.label, c.status, c.detail));
+function docPicker(id, icon, title, sub, doc) {
+  return `<label class="doc ${doc ? "done" : ""}"><span class="ic">${icon}</span><span><b>${title}</b><span>${doc ? "Uploaded · tap to replace" : sub}</span></span><span>${doc ? "✓" : "›"}</span><input type="file" id="${id}" accept="image/jpeg,image/png,image/webp"></label>${doc ? `<div class="preview"><img src="${doc.data}" alt="${title}"></div>` : ""}`;
+}
+
+// ============================================================ 1. loan + consent
+function emi(P, years) { const r = RATE / 12, n = years * 12; return (P * r * (1 + r) ** n) / ((1 + r) ** n - 1); }
+function stepLoan() {
+  const L = S.loan;
+  layout(`<h1>Let's set up your home loan</h1><p>Tell us what you need. KYC takes about 12 minutes and every document is checked as you upload it.</p>
+    <div class="why">🛡️ <span>Your identity is verified by <b>TrueID Shield</b>, which cross-checks your documents, face and registry records to stop identity fraud in your name.</span></div>`,
+    `<div class="row3"><div><label class="f" for="amt">Loan amount (₹)</label><div class="in"><input id="amt" inputmode="numeric" value="${L.amount}"></div></div>
+     <div><label class="f" for="ten">Tenure (years)</label><div class="in"><select id="ten">${[10, 15, 20, 25, 30].map((y) => `<option ${y === L.tenure ? "selected" : ""}>${y}</option>`).join("")}</select></div></div>
+     <div><label class="f" for="city">Property city</label><div class="in"><input id="city" value="${esc(L.city)}" placeholder="e.g. Panaji"></div></div></div>
+     <div class="emi" id="emi"></div>
+     <div class="sec">Consent</div>
+     <label class="chk"><input type="checkbox" id="c1"> I allow Kestrel to verify my identity, documents and photo with TrueID Shield, UIDAI (Aadhaar e-KYC) and the Income Tax Department.</label>
+     <label class="chk"><input type="checkbox" id="c2"> I allow Kestrel to fetch my credit report from a credit bureau for this application.</label>
+     <label class="chk"><input type="checkbox" id="c3"> I have read the privacy notice. My documents are kept only as long as the law requires.</label>
+     ${nav("Start KYC")}`);
+  const upd = () => { const P = +val("amt").replace(/\D/g, "") || 0, y = +val("ten"); const e = emi(P, y);
+    $("#emi").innerHTML = `<div><span>Indicative EMI</span><b>${inr(e)}</b></div><div><span>Interest rate</span><b>${(RATE * 100).toFixed(2)}%</b></div><div><span>Income usually needed</span><b>${inr(e / 0.5)}/mo</b></div>`; };
+  $("#amt").oninput = upd; $("#ten").onchange = upd; upd();
+  $("#go").onclick = () => {
+    const P = +val("amt").replace(/\D/g, "");
+    if (P < 500000 || P > 50000000) return err("Enter an amount between ₹5 lakh and ₹5 crore.");
+    if (!val("city")) return err("Enter the city of the property.");
+    if (!$("#c1").checked || !$("#c2").checked || !$("#c3").checked) return err("Please give all three consents to continue.");
+    Object.assign(S.loan, { amount: P, tenure: +val("ten"), city: val("city") });
+    setResult("loan", [C("consent_kyc", "Consent to identity verification recorded", "PASS"), C("consent_bureau", "Consent to credit bureau check recorded", "PASS")]);
+    next();
+  };
+}
+
+// ============================================================ 2. mobile + email
+function stepContact() {
+  const f = S.form, r = S.results.contact || [];
+  layout(`<h1>Mobile number & email</h1><p>We'll send OTPs to both. Use the mobile number linked to your Aadhaar.</p>`,
+    `<div class="row2"><div><label class="f" for="phone">Mobile number</label><div class="in"><span class="pre">+91</span><input id="phone" name="phone" inputmode="numeric" maxlength="10" value="${esc(f.phone)}"></div></div>
+     <div><label class="f" for="email">Email</label><div class="in"><input id="email" name="email" type="email" value="${esc(f.email)}"></div></div></div>
+     <div id="o"></div>${checksBox("Verification", r)}${nav(r.length ? "Continue" : "Send OTPs")}`);
+  wireBack();
+  if (r.length) { $("#go").onclick = next; return; }
+  $("#go").onclick = () => {
+    const ph = val("phone"), em = val("email");
+    if (!/^[6-9]\d{9}$/.test(ph)) return err("Enter a valid 10-digit mobile number.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return err("Enter a valid email address.");
+    Object.assign(f, { phone: ph, email: em });
+    const mo = KYC.otp(), eo = KYC.otp();
+    toast(`Demo SMS to +91 ${esc(ph)}<br>Mobile OTP <b>${mo}</b><br>Demo email to ${esc(em)}<br>Email OTP <b>${eo}</b>`, 15000);
+    $("#o").innerHTML = `<label class="f">Mobile OTP</label>${otpBoxes("mo")}<label class="f">Email OTP</label>${otpBoxes("eo")}`;
+    const m = wireOtp("mo"), e = (() => { const b = [...document.querySelectorAll("#eo input")]; return () => b.map((x) => x.value).join(""); })();
+    wireOtp("eo"); document.querySelector("#mo input").focus();
+    $("#go").textContent = "Verify";
+    $("#go").onclick = () => {
+      const ok1 = m() === mo, ok2 = e() === eo;
+      if (!ok1 || !ok2) return err(!ok1 ? "The mobile OTP is wrong." : "The email OTP is wrong.");
+      setResult("contact", [C("mobile_otp", "Mobile number verified by OTP", "PASS", "+91 " + ph), C("email_otp", "Email verified by OTP", "PASS", em),
+        C("sim_check", "SIM age and subscriber name", "PENDING", "Checked by TrueID with the telecom registry at submission")]);
+      stepContact();
+    };
+  };
+}
+
+// ============================================================ 3. PAN
+function stepPan() {
+  const f = S.form, r = S.results.pan || [];
+  layout(`<h1>PAN details</h1><p>Your PAN is checked with the Income Tax Department. It must belong to an individual and match your date of birth.</p>`,
+    `<div class="row2"><div><label class="f" for="pan">PAN</label><div class="in"><input id="pan" name="pan" maxlength="10" style="text-transform:uppercase" value="${esc(f.pan)}" placeholder="ABCDE1234F"></div></div>
+     <div><label class="f" for="dob">Date of birth</label><div class="in"><input id="dob" name="dob" type="date" value="${esc(S.dobIso)}"></div></div></div>
+     ${checksBox("Verification", r)}${nav(r.length ? "Continue" : "Verify PAN")}`);
+  wireBack();
+  $("#go").onclick = async () => {
+    const pan = val("pan").toUpperCase(), iso = val("dob");
+    if (!/^[A-Z]{3}P[A-Z]\d{4}[A-Z]$/.test(pan)) return err("Enter a valid individual PAN: 5 letters, 4 digits, 1 letter, with P as the 4th letter.");
+    if (!iso) return err("Enter your date of birth.");
+    if (r.length && pan === f.pan && iso === S.dobIso) return next();
+    $("#go").disabled = true;
+    const v = await KYC.api("/api/verify/pan", { pan, dob: "" });
+    $("#go").disabled = false;
+    const dob = KYC.toDmy(iso);
+    const list = [C("pan_format", "PAN format (individual holder)", "PASS"), C("pan_nsdl", "PAN found in Income Tax records", v.ok ? "PASS" : "FAIL", v.ok ? "" : v.error)];
+    if (v.ok) list.push(C("pan_dob", "Date of birth matches PAN records", v.dob === dob ? "PASS" : "FAIL", v.dob === dob ? "" : "Check your date of birth"),
+      C("pan_name", "Name on PAN", "PASS", v.name));
+    Object.assign(f, { pan, dob }); S.dobIso = iso;
+    if (v.ok) { S.panName = v.name; S.panDob = v.dob; S.panLast4 = v.id_last4; }
+    setResult("pan", list);
+    if (!v.ok || v.dob !== dob) { stepPan(); return err("We can't continue until your PAN and date of birth match Income Tax records."); }
+    stepPan();
+  };
+}
+
+// ============================================================ 4. Aadhaar e-KYC
+function stepAadhaar() {
+  const f = S.form, r = S.results.aadhaar || [];
+  layout(`<h1>Aadhaar e-KYC</h1><p>Your name, date of birth and gender come straight from UIDAI with an OTP to your Aadhaar-linked mobile. They're then compared with your PAN.</p>`,
+    `<label class="f" for="aad">Aadhaar number</label><div class="in"><input id="aad" inputmode="numeric" maxlength="14" value="${esc(f.id_number)}" placeholder="XXXX XXXX XXXX"></div>
+     <label class="chk"><input type="checkbox" id="ac" ${r.length ? "checked" : ""}> I consent to Aadhaar-based e-KYC authentication with UIDAI for this loan.</label>
+     <div id="o"></div>
+     ${S.ekyc ? `<div class="vcard" style="margin-top:14px"><span class="tag PASS">From UIDAI</span><dl><dt>Name</dt><dd>${esc(f.name)}</dd><dt>Date of birth</dt><dd>${esc(S.ekyc.dob)}</dd><dt>Gender</dt><dd>${{ F: "Female", M: "Male" }[S.ekyc.gender] || esc(S.ekyc.gender)}</dd>${S.ekyc.address ? `<dt>Address</dt><dd>${esc(S.ekyc.address)}</dd>` : ""}</dl></div>` : ""}
+     ${checksBox("Verification", r)}${nav(r.length ? "Continue" : "Send Aadhaar OTP")}`);
+  wireBack();
+  if (r.length && !r.some((c) => c.status === "FAIL")) { $("#go").onclick = next; return; }
+  $("#go").onclick = async () => {
+    const id = val("aad").replace(/\s/g, "");
+    if (!$("#ac").checked) return err("Please give consent for Aadhaar e-KYC.");
+    const v = await KYC.api("/api/verify/aadhaar", { id_number: id });
+    if (!v.ok) { setResult("aadhaar", [C("aadhaar_valid", "Aadhaar number is valid and exists", "FAIL", v.error)]); stepAadhaar(); return; }
+    sendOtp("UIDAI SMS", "your Aadhaar-linked mobile");
+    $("#o").innerHTML = `<label class="f">UIDAI OTP</label>${otpBoxes("ao")}`;
+    const o = wireOtp("ao");
+    $("#go").textContent = "Verify";
+    $("#go").onclick = async () => {
+      if (o() !== S.otp) return err("The OTP is wrong.");
+      const link = await KYC.api("/api/verify/pan-link", { pan: f.pan, id_number: id });
+      S.link = link.unavailable ? null : !!link.linked;
+      Object.assign(f, { id_number: id, name: v.name, gender: v.gender }); S.ekyc = v;
+      if (v.address && !f.address) { f.address = v.address; f.pincode = (v.address.match(/\b\d{6}\b/) || [""])[0]; }
+      const nameOk = sameName(S.panName, v.name), dobOk = v.dob === S.panDob;
+      setResult("aadhaar", [
+        C("aadhaar_valid", "Aadhaar number checksum and record", "PASS"), C("aadhaar_ekyc", "e-KYC OTP verified with UIDAI", "PASS"),
+        C("name_pan_aadhaar", "Name on Aadhaar matches PAN", nameOk ? "PASS" : "FAIL", nameOk ? "" : `PAN: ${S.panName} · Aadhaar: ${v.name}`),
+        C("dob_pan_aadhaar", "Date of birth on Aadhaar matches PAN", dobOk ? "PASS" : "FAIL", dobOk ? "" : `PAN: ${S.panDob} · Aadhaar: ${v.dob}`),
+        C("pan_aadhaar_linked", "PAN is linked to this Aadhaar (Income Tax)", S.link == null ? "UNAVAILABLE" : S.link ? "PASS" : "FAIL", S.link === false ? "This PAN is linked to a different Aadhaar, or not linked" : ""),
+      ]);
+      stepAadhaar();
+      if (!nameOk || !dobOk || S.link === false) err("Your PAN and Aadhaar must belong to the same person. Please check both before continuing.");
+    };
+  };
+}
+
+// ============================================================ 5. ID card (TrueID document module)
+function stepIdCard() {
+  const d = S.docs.idcard, r = S.results.idcard || [];
+  layout(`<h1>Photo of your ID card</h1><p>The front of your identity card, including the QR code. TrueID checks the issuer's signature in the QR and compares it with the printed details and your Aadhaar e-KYC.</p>`,
+    `${docPicker("cf", "🪪", "Identity card (front)", "JPG or PNG · all four corners and the QR code visible", d)}
+     <div id="busy"></div>${checksBox("TrueID document check", r)}${nav(d ? "Continue" : "Upload to continue")}`);
+  wireBack();
+  $("#cf").onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    $("#busy").innerHTML = `<p class="note"><span class="spin"></span> Checking the card with TrueID…</p>`;
+    const f = S.form;
+    S.docs.idcard = await checkDoc("idcard", file, { name: f.name, dob: f.dob, id_number: f.id_number, pan: f.pan });
+    setResult("idcard", fromDoc(S.docs.idcard));
+    stepIdCard();
+  };
+  $("#go").onclick = () => (S.docs.idcard ? next() : err("Upload a photo of your ID card."));
+}
+
+// ============================================================ 6. live selfie + server-issued head-turn challenge
+let stream = null;
+const stopCam = () => { stream?.getTracks().forEach((t) => t.stop()); stream = null; };
+function stepSelfie() {
+  const r = S.results.selfie || [];
+  layout(`<h1>Live selfie</h1><p>A short check that a real person is present: look at the camera, then turn your head in the order shown. The order is chosen by TrueID for this application and the frames are checked on its server.</p>`,
+    `<div class="stage"><div class="cam" id="cam">${S.selfie ? `<img src="${S.selfie}" alt="Your selfie"><div class="tag2">✓ Captured</div>` : `<div class="idle">📷<br>Camera is off</div>`}</div>
+       <div><ul class="tips"><li>Good light, face the camera</li><li>No glasses, cap or mask</li><li>Turn your head slowly when asked</li><li>Only you in the frame</li></ul></div></div>
+     ${checksBox("Verification", r)}${nav(S.selfie ? "Continue" : "Start camera")}`);
+  wireBack();
+  if (S.selfie) { $("#go").onclick = next; $(".btns").insertAdjacentHTML("beforeend", `<button class="btn ghost" id="redo">Retake</button>`); $("#redo").onclick = () => { S.selfie = null; S.results.selfie = []; stepSelfie(); }; return; }
+  $("#go").onclick = startCam;
+}
+async function startCam() {
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 } }, audio: false }); }
+  catch { return err("We couldn't open your camera. Allow camera access and try again."); }
+  S.camera = await KYC.cameraLabels(stream);
+  $("#cam").innerHTML = `<video autoplay playsinline muted></video><div class="ring"></div><div class="tag2" id="ct">Position your face in the oval</div>`;
+  const v = $("#cam video"); v.srcObject = stream; await v.play();
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => (S.geo = { lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy) }), () => {}, { timeout: 8000 });
+  $("#go").textContent = "Start face check";
+  $("#go").onclick = async () => {
+    $("#go").disabled = true;
+    const ch = await fetch("/api/liveness/challenge", { method: "POST" }).then((x) => x.json()).catch(() => null);
+    if (!ch?.challenge_id) { $("#go").disabled = false; return err("Couldn't start the face check. Please try again."); }
+    const tag = $("#ct"), wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    const cd = async (t, s) => { for (let i = s; i > 0; i--) { tag.textContent = `${t} · ${i}`; await wait(1000); } };
+    await cd("Look straight at the camera", 2);
+    const frames = [await KYC.toJpeg(v, 960, 0.85)]; // raw (unmirrored) frames: the convention TrueID verifies against
+    for (const step of ch.sequence) { await cd(`Turn your head to your ${step === "turn_left" ? "left ⟵" : "right ⟶"}`, 3); frames.push(await KYC.toJpeg(v, 960, 0.85)); tag.textContent = "Face the camera again"; await wait(800); }
+    S.challenge = ch; S.frames = frames; S.selfie = frames[0]; stopCam();
+    setResult("selfie", [C("live_capture", "Captured live from the camera (no upload)", "PASS"),
+      C("virtual_camera", "No virtual camera in use", S.camera.virtual ? "FAIL" : "PASS", S.camera.active || ""),
+      C("liveness_challenge", "Head-turn challenge from TrueID completed", "PASS", ch.sequence.map((s) => s.replace("_", " ")).join(", ")),
+      C("face_match", "Face matches the ID card and the UIDAI photo", "PENDING", "Checked by TrueID at submission"),
+      C("liveness_verified", "Head turns verified on TrueID's server", "PENDING", "Checked by TrueID at submission")]);
+    stepSelfie();
+  };
+}
+
+// ============================================================ 7. address: electricity bill
+function stepAddress() {
+  const f = S.form, b = S.bill, r = S.results.address || [];
+  layout(`<h1>Current address</h1><p>Your current address and an electricity bill not older than two months (RBI). We check the bill's date, name and PIN, and read the bill to make sure what you typed is printed on it.</p>`,
+    `<label class="f" for="addr">Current address</label><div class="in"><input id="addr" value="${esc(f.address)}" placeholder="House, street, area, city"></div>
+     <div class="row2"><div><label class="f" for="pin">PIN code</label><div class="in"><input id="pin" inputmode="numeric" maxlength="6" value="${esc(f.pincode)}"></div></div>
+     <div><label class="f" for="rel">Bill is in the name of</label><div class="in"><select id="rel">${["Self", "Spouse", "Parent", "Landlord"].map((x) => `<option ${b.relation === x ? "selected" : ""}>${x}</option>`).join("")}</select></div></div></div>
+     <div class="sec">Electricity bill</div>
+     <div class="row2"><div><label class="f" for="bname">Name on the bill</label><div class="in"><input id="bname" value="${esc(b.name || f.name)}"></div></div>
+     <div><label class="f" for="cons">Consumer number</label><div class="in"><input id="cons" inputmode="numeric" value="${esc(b.consumer)}"></div></div></div>
+     <div class="row2"><div><label class="f" for="bdate">Bill date</label><div class="in"><input id="bdate" type="date" value="${esc(b.date)}"></div></div>
+     <div><label class="f" for="bpin">PIN code on the bill</label><div class="in"><input id="bpin" inputmode="numeric" maxlength="6" value="${esc(b.pincode)}"></div></div></div>
+     ${docPicker("bf", "⚡", "Electricity bill", "Photo or scan of the full first page", S.docs.bill)}
+     <div id="busy"></div>${checksBox("Verification", r)}${nav(r.length ? "Continue" : "Check address")}`);
+  wireBack();
+  let file = null;
+  $("#bf").onchange = (e) => { file = e.target.files[0]; if (file) $("#bf").closest(".doc").querySelector("span span").textContent = file.name + " · ready to check"; };
+  $("#go").onclick = async () => {
+    const pin = val("pin"), bpin = val("bpin"), date = val("bdate");
+    if (!val("addr") || !/^\d{6}$/.test(pin)) return err("Enter your current address and a 6-digit PIN code.");
+    if (!val("bname") || !/^\d{6,15}$/.test(val("cons")) || !date || !/^\d{6}$/.test(bpin)) return err("Fill in the bill's name, consumer number, date and PIN code.");
+    if (!file && !S.docs.bill) return err("Upload your electricity bill.");
+    const changed = file || JSON.stringify([val("bname"), val("cons"), date, bpin]) !== JSON.stringify([b.name, b.consumer, b.date, b.pincode]);
+    Object.assign(f, { address: val("addr"), pincode: pin });
+    Object.assign(b, { name: val("bname"), consumer: val("cons"), date, pincode: bpin, relation: val("rel") });
+    if (r.length && !changed) return next();
+    $("#busy").innerHTML = `<p class="note"><span class="spin"></span> Checking your bill with TrueID…</p>`;
+    if (file) S.docs.bill = await checkDoc("bill", file, { name: b.name, consumer_no: b.consumer, bill_date: b.date, pincode: b.pincode });
+    const age = daysAgo(b.date), self = b.relation === "Self";
+    setResult("address", [
+      C("bill_recent", "Bill is not older than 2 months", age <= 60 && age >= 0 ? "PASS" : "FAIL", `Dated ${age} days ago`),
+      C("bill_name", self ? "Name on the bill matches your Aadhaar" : `Bill is in your ${b.relation.toLowerCase()}'s name`,
+        self ? (sameName(b.name, f.name) ? "PASS" : "FAIL") : "WARN", self ? "" : "Allowed with a relationship declaration; our team will confirm"),
+      C("bill_pin", "PIN on the bill matches your current address", bpin === pin ? "PASS" : "FAIL"),
+      ...fromDoc(S.docs.bill),
+    ]);
+    stepAddress();
+    if (age > 60) err("RBI accepts utility bills up to 2 months old. Please upload a recent bill.");
+  };
+}
+
+// ============================================================ 8. income: salary slip + bank statement
+function stepIncome() {
+  const a = S.inc, r = S.results.income || [];
+  layout(`<h1>Income</h1><p>Your latest salary slip and a bank statement showing the salary credit. We compare your declared income, the slip and the statement, and read both documents.</p>`,
+    `<div class="row3"><div><label class="f" for="emp">Employer</label><div class="in"><input id="emp" value="${esc(a.employer)}"></div></div>
+     <div><label class="f" for="net">Monthly take-home (₹)</label><div class="in"><input id="net" inputmode="numeric" value="${esc(a.net)}"></div></div>
+     <div><label class="f" for="exist">Existing EMIs / month (₹)</label><div class="in"><input id="exist" inputmode="numeric" value="${esc(a.existing ?? 0)}"></div></div></div>
+     <div class="sec">Latest salary slip</div>
+     <div class="row3"><div><label class="f" for="sname">Employee name on slip</label><div class="in"><input id="sname" value="${esc(a.slipName || S.form.name)}"></div></div>
+     <div><label class="f" for="semp">Employer on slip</label><div class="in"><input id="semp" value="${esc(a.slipEmployer)}"></div></div>
+     <div><label class="f" for="snet">Net pay on slip (₹)</label><div class="in"><input id="snet" inputmode="numeric" value="${esc(a.slipNet)}"></div></div></div>
+     <label class="f" for="smonth">Pay month</label><div class="in"><input id="smonth" type="month" value="${esc(a.month)}"></div>
+     ${docPicker("sf", "🧾", "Salary slip", "Latest month's slip", S.docs.slip)}
+     <div class="sec">Bank statement (salary account)</div>
+     <div class="row3"><div><label class="f" for="tname">Account holder</label><div class="in"><input id="tname" value="${esc(a.stmtName || S.form.name)}"></div></div>
+     <div><label class="f" for="tacct">Account number</label><div class="in"><input id="tacct" inputmode="numeric" value="${esc(a.stmtAcct)}"></div></div>
+     <div><label class="f" for="tcred">Latest salary credit (₹)</label><div class="in"><input id="tcred" inputmode="numeric" value="${esc(a.credit)}"></div></div></div>
+     ${docPicker("tf", "🏦", "Bank statement", "Page showing the latest salary credit", S.docs.statement)}
+     <div id="busy"></div>${checksBox("Verification", r)}${nav(r.length ? "Continue" : "Check income")}`);
+  wireBack();
+  const files = {};
+  for (const [id, k] of [["sf", "slip"], ["tf", "statement"]]) $("#" + id).onchange = (e) => { files[k] = e.target.files[0]; if (files[k]) $("#" + id).closest(".doc").querySelector("span span").textContent = files[k].name + " · ready to check"; };
+  $("#go").onclick = async () => {
+    const n = (id) => val(id).replace(/[^\d]/g, "");
+    const v = { employer: val("emp"), net: n("net"), existing: n("exist") || "0", slipName: val("sname"), slipEmployer: val("semp"), slipNet: n("snet"), month: val("smonth"),
+      stmtName: val("tname"), stmtAcct: n("tacct"), credit: n("tcred") };
+    if (!v.employer || !v.net || !v.slipName || !v.slipEmployer || !v.slipNet || !v.month || !v.stmtName || v.stmtAcct.length < 9 || !v.credit) return err("Please fill in every field (account number has at least 9 digits).");
+    if ((!files.slip && !S.docs.slip) || (!files.statement && !S.docs.statement)) return err("Upload both the salary slip and the bank statement.");
+    const changed = files.slip || files.statement || JSON.stringify(v) !== JSON.stringify(Object.fromEntries(Object.keys(v).map((k) => [k, a[k]])));
+    Object.assign(a, v);
+    if (r.length && !changed) return next();
+    $("#busy").innerHTML = `<p class="note"><span class="spin"></span> Checking your documents with TrueID…</p>`;
+    const [slip, stmt] = await Promise.all([
+      files.slip ? checkDoc("slip", files.slip, { name: a.slipName, employer: a.slipEmployer, net_pay: a.slipNet }) : S.docs.slip,
+      files.statement ? checkDoc("statement", files.statement, { name: a.stmtName, account_no: a.stmtAcct, salary_credit: a.credit }) : S.docs.statement]);
+    S.docs.slip = slip; S.docs.statement = stmt;
+    const [y, m] = a.month.split("-").map(Number), monthsOld = (new Date().getFullYear() - y) * 12 + new Date().getMonth() + 1 - m;
+    const empOk = sameName(a.slipEmployer, a.employer) || a.slipEmployer.toUpperCase() === a.employer.toUpperCase();
+    setResult("income", [
+      C("slip_recent", "Salary slip is from the last 3 months", monthsOld >= 0 && monthsOld <= 3 ? "PASS" : "FAIL", `${a.month}`),
+      C("slip_name", "Name on the slip matches your Aadhaar", sameName(a.slipName, S.form.name) ? "PASS" : "FAIL"),
+      C("slip_employer", "Employer on the slip matches what you declared", empOk ? "PASS" : "FAIL"),
+      C("slip_net_pay", "Net pay on the slip matches your declared income (±10%)", near(a.slipNet, a.net, 0.1) ? "PASS" : "FAIL", `${inr(a.slipNet)} vs ${inr(a.net)}`),
+      C("statement_name", "Statement is in your name", sameName(a.stmtName, S.form.name) ? "PASS" : "FAIL"),
+      C("salary_credit", "Salary credit in the statement matches the slip (±5%)", near(a.credit, a.slipNet, 0.05) ? "PASS" : "FAIL", `${inr(a.credit)} vs ${inr(a.slipNet)}`),
+      ...fromDoc(slip).map((c) => ({ ...c, label: "Slip: " + c.label })), ...fromDoc(stmt).map((c) => ({ ...c, label: "Statement: " + c.label })),
+    ]);
+    stepIncome();
+  };
+}
+
+// ============================================================ 9. repayment account + affordability
+function stepAccount() {
+  const ac = S.acct, a = S.inc, r = S.results.account || [];
+  const e = emi(S.loan.amount, S.loan.tenure), foir = (e + +a.existing) / +a.net;
+  layout(`<h1>Repayment account</h1><p>A cancelled cheque from the account your EMIs will be paid from. It should be the salary account you just showed us.</p>`,
+    `<div class="row3"><div><label class="f" for="cname">Name on the account</label><div class="in"><input id="cname" value="${esc(ac.name || S.form.name)}"></div></div>
+     <div><label class="f" for="cacct">Account number</label><div class="in"><input id="cacct" inputmode="numeric" value="${esc(ac.account || a.stmtAcct)}"></div></div>
+     <div><label class="f" for="cifsc">IFSC</label><div class="in"><input id="cifsc" maxlength="11" style="text-transform:uppercase" value="${esc(ac.ifsc)}"></div></div></div>
+     ${docPicker("qf", "✍️", "Cancelled cheque", "Name, account number and IFSC visible", S.docs.cheque)}
+     <div class="emi"><div><span>EMI for ${inr(S.loan.amount)}</span><b>${inr(e)}</b></div><div><span>Existing EMIs</span><b>${inr(+a.existing)}</b></div><div><span>Share of income (FOIR)</span><b>${Math.round(foir * 100)}%</b></div></div>
+     <div id="busy"></div>${checksBox("Verification", r)}${nav(r.length ? "Continue" : "Check account")}`);
+  wireBack();
+  let file = null;
+  $("#qf").onchange = (ev) => { file = ev.target.files[0]; if (file) $("#qf").closest(".doc").querySelector("span span").textContent = file.name + " · ready to check"; };
+  $("#go").onclick = async () => {
+    const v = { name: val("cname"), account: val("cacct").replace(/\D/g, ""), ifsc: val("cifsc").toUpperCase() };
+    if (!v.name || v.account.length < 9) return err("Enter the account holder's name and account number.");
+    if (!file && !S.docs.cheque) return err("Upload a cancelled cheque.");
+    const changed = file || JSON.stringify(v) !== JSON.stringify({ name: ac.name, account: ac.account, ifsc: ac.ifsc });
+    Object.assign(ac, v);
+    if (r.length && !changed) return next();
+    $("#busy").innerHTML = `<p class="note"><span class="spin"></span> Checking your cheque with TrueID…</p>`;
+    if (file) S.docs.cheque = await checkDoc("cheque", file, { name: ac.name, account_no: ac.account, ifsc: ac.ifsc });
+    setResult("account", [
+      C("ifsc_format", "IFSC is valid", IFSC.test(ac.ifsc) ? "PASS" : "FAIL", IFSC.test(ac.ifsc) ? "" : "4 letters, 0, then 6 letters or digits"),
+      C("cheque_name", "Account is in your name", sameName(ac.name, S.form.name) ? "PASS" : "FAIL"),
+      C("account_matches_statement", "Same account as your salary statement", ac.account === a.stmtAcct ? "PASS" : "WARN", ac.account === a.stmtAcct ? "" : "A different account is allowed, but it will be reviewed"),
+      C("penny_drop", "₹1 test transfer confirms the account holder", "UNAVAILABLE", "Simulated in this demo; a live lender uses its bank's account-validation API"),
+      C("affordability", "EMIs stay within 50% of your income (FOIR)", foir <= 0.5 ? "PASS" : "WARN", `${Math.round(foir * 100)}% of ${inr(+a.net)}${foir > 0.5 ? " · we may offer a smaller loan" : ""}`),
+      ...fromDoc(S.docs.cheque).map((c) => ({ ...c, label: "Cheque: " + c.label })),
+    ]);
+    stepAccount();
+  };
+}
+
+// ============================================================ 10. review, signature, eSign, submit
+function stepEsign() {
+  const f = S.form, a = S.inc, flags = Object.values(S.results).flat().filter((c) => c.status === "FAIL" || c.status === "WARN");
+  layout(`<h1>Review & eSign</h1><p>Check your details, sign below, then eSign the application with an Aadhaar OTP. Your documents and the live checks go to TrueID for the final identity verification.</p>`,
+    `<div class="vcard"><div style="display:flex;gap:12px;align-items:center">${S.selfie ? `<img src="${S.selfie}" style="width:60px;height:60px;object-fit:cover;border-radius:12px">` : ""}<div><b>${esc(f.name)}</b><br><span class="note" style="margin:0">PAN ${esc(f.pan)} · Aadhaar XXXX ${esc(f.id_number?.slice(-4))}</span></div></div>
+       <dl><dt>Loan</dt><dd>${inr(S.loan.amount)} for ${S.loan.tenure} years · ${esc(S.loan.city)}</dd><dt>Mobile / email</dt><dd>+91 ${esc(f.phone)} · ${esc(f.email)}</dd>
+       <dt>Address</dt><dd>${esc(f.address)} ${esc(f.pincode)}</dd><dt>Employer</dt><dd>${esc(a.employer)} · ${inr(+a.net)}/month</dd><dt>Repayment</dt><dd>A/c XXXX${esc(S.acct.account?.slice(-4))} · ${esc(S.acct.ifsc)}</dd></dl></div>
+     ${flags.length ? checksBox("Things our team will review", flags) : `<div class="checks"><h4><span>Every step passed its checks</span><span class="tag PASS">Ready</span></h4></div>`}
+     <div class="sec">Your signature</div><canvas class="sig" id="sig"></canvas><p class="note" style="display:flex;justify-content:space-between;margin-top:6px"><span>Sign with your mouse or finger</span><button class="link" id="clr">Clear</button></p>
+     <label class="chk"><input type="checkbox" id="agree"> I confirm these details are true and authorise Kestrel to submit them for verification.</label>
+     <div id="o"></div>${nav("eSign with Aadhaar OTP")}`);
+  wireBack();
+  const c = $("#sig"), g = c.getContext("2d"), rc = c.getBoundingClientRect();
+  c.width = rc.width * devicePixelRatio; c.height = rc.height * devicePixelRatio; g.scale(devicePixelRatio, devicePixelRatio); g.lineWidth = 2.4; g.lineCap = "round"; g.strokeStyle = "#13202a";
+  let drawing = false, ink = 0; const pt = (e) => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  c.onpointerdown = (e) => { drawing = true; c.setPointerCapture(e.pointerId); g.beginPath(); g.moveTo(...pt(e)); };
+  c.onpointermove = (e) => { if (drawing) { g.lineTo(...pt(e)); g.stroke(); ink++; } }; c.onpointerup = () => (drawing = false);
+  $("#clr").onclick = () => { g.clearRect(0, 0, c.width, c.height); ink = 0; };
+  $("#go").onclick = () => {
+    if (ink < 25) return err("Please sign in the box.");
+    if (!$("#agree").checked) return err("Please confirm the declaration.");
+    S.sig = c.toDataURL("image/png");
+    sendOtp("UIDAI SMS (eSign)", "your Aadhaar-linked mobile");
+    $("#o").innerHTML = `<label class="f">eSign OTP</label>${otpBoxes("so")}`;
+    const o = wireOtp("so");
+    $("#go").textContent = "Sign & submit";
+    $("#go").onclick = async () => {
+      if (o() !== S.otp) return err("The OTP is wrong.");
+      setResult("esign", [C("signature", "Signature captured", "PASS"), C("esign", "Application eSigned with Aadhaar OTP", "PASS")]);
+      $("#go").disabled = true; $("#go").textContent = "Submitting…";
+      try { await submit(); } catch (e) { $("#go").disabled = false; $("#go").textContent = "Sign & submit"; err("Couldn't submit: " + e.message); }
+    };
+  };
+}
+
+/** Sends the application to our server, which forwards it to TrueID Shield's partner API with Kestrel's key.
+ * TrueID verifies the ID card, face (card + UIDAI photo), the head-turn frames, registries, device, behaviour and the
+ * cross-application graph. Kestrel's own step checks travel as partner_checks: shown to Kestrel's team, never counted by
+ * TrueID as evidence. */
+async function submit() {
+  const f = S.form, all = Object.values(S.results).flat();
+  const partner_checks = Object.fromEntries(all.filter((c) => !["PENDING"].includes(c.status)).map((c) => [c.key, c.status === "PASS"]));
+  const flags = all.filter((c) => c.status === "FAIL" || c.status === "WARN").map((c) => c.label);
+  const payload = {
+    reference: S.ref,
+    form: { name: f.name, dob: f.dob, gender: f.gender, id_number: f.id_number, phone: f.phone, email: f.email, pan: f.pan, address: f.address.slice(0, 200), pincode: f.pincode },
+    device: { device_id: await KYC.deviceId("Kestrel~"), user_agent: navigator.userAgent, camera_labels: S.camera.labels, active_camera: S.camera.active, geo: S.geo },
+    telemetry: tel.snapshot(), challenge_id: S.challenge?.challenge_id,
+    liveness: { performed: true, passed: true, challenges: S.challenge?.sequence || [], virtual_camera: S.camera.virtual },
+    capture: { card: "upload_id_card", selfie: "live_head_turn_challenge", documents: Object.keys(S.docs).join(", "),
+      loan: `${inr(S.loan.amount)} / ${S.loan.tenure}y`, lender_flags: flags.join(" | ").slice(0, 600) || "none" },
+    partner_checks,
+  };
+  const r = await fetch("/api/kyc/submit", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ payload, card: S.docs.idcard.data, selfie: S.selfie, frames: S.frames }) }).then((x) => x.json());
+  if (!r.application_id) throw new Error(typeof r.detail === "string" ? r.detail : JSON.stringify(r.detail || "unknown error"));
+  S.appId = r.application_id; done(flags.length);
+}
+
+function done(flagCount) {
+  renderRail(true);
+  const tl = (st) => `<ol class="timeline"><li class="ok"><i>✓</i><div><b>Application submitted</b><span>${esc(S.ref)} · TrueID case ${esc(S.appId)}</span></div></li>
+    <li class="ok"><i>✓</i><div><b>Step-by-step checks</b><span>${flagCount ? `${flagCount} item${flagCount > 1 ? "s" : ""} flagged for review` : "Every step passed"}</span></div></li>
+    <li class="${st === "run" ? "" : "ok"}"><i>${st === "run" ? '<span class="spin"></span>' : "✓"}</i><div><b>Identity verification by TrueID</b><span>${st === "run" ? "Checking documents, face, liveness and records…" : "Completed"}</span></div></li>
+    <li><i></i><div><b>Credit assessment & sanction</b><span>${st === "approved" && !flagCount ? "Next: our credit team, usually within 2 working days" : st === "declined" ? "Not started" : "After review"}</span></div></li></ol>`;
+  layout(`<h1>Application submitted</h1><p>Keep your application number handy.</p>`, `<div class="result" id="res"><div class="badge wait">⏳</div><h2>Verifying your identity</h2><p class="note">This takes about a minute.</p>${tl("run")}</div>`);
+  renderRail(true);
+  const poll = async () => {
+    const r = await fetch(`/api/kyc/status/${S.appId}`).then((x) => x.json()).catch(() => ({}));
+    if (r.status !== "completed") return setTimeout(poll, 2000);
+    const o = r.outcome === "approved" && flagCount ? "review" : r.outcome || "review";
+    const m = { approved: ["✓", "Identity verified", "Your KYC is complete. Our credit team will contact you about your sanction letter."],
+      review: ["!", "We're reviewing your application", "A few details need a closer look. We'll contact you within 2 working days, or sooner if we need another document."],
+      declined: ["✕", "We couldn't verify your identity", "We weren't able to complete your KYC online. Please visit a Kestrel branch with your original documents."] }[o];
+    $("#res").innerHTML = `<div class="badge ${o === "approved" ? "" : o}">${m[0]}</div><h2>${m[1]}</h2><p class="note">${m[2]}</p>${tl(o)}<div class="btns" style="justify-content:center"><button class="btn ghost" onclick="location.reload()">Start a new application</button></div>`;
+  };
+  poll();
+}
+
+const RENDER = [stepLoan, stepContact, stepPan, stepAadhaar, stepIdCard, stepSelfie, stepAddress, stepIncome, stepAccount, stepEsign];
+function render() { RENDER[S.step](); }
+
+// ============================================================ TrueID status + demo test data
+(async () => {
+  const m = await fetch("/api/mode").then((r) => r.json()).catch(() => null);
+  if (m) { $("#shield").classList.toggle("live", m.mode === "remote");
+    $("#shield").innerHTML = `<span class="led"></span><span><b>Protected by TrueID Shield</b><br>${m.mode === "remote" ? "Live fraud checks connected" : "Demo mode · backend not connected"}</span>`; }
+  const ids = await fetch("/api/demo-identities").then((r) => r.json()).catch(() => []);
+  const d = $("#demo"); d.hidden = false;
+  const slug = (n) => n.toLowerCase().replace(/\s+/g, "-");
+  d.innerHTML = `<button id="dbtn">Test data</button><div class="panel" id="dp" hidden><b>Test documents</b><p class="note" style="margin:4px 0 8px">Sample bill, salary slip, statement and cheque for each person: <a href="/test-documents/" target="_blank">open the folder</a>. OTPs appear on screen.</p>
+    ${ids.length ? ids.map((i) => `<div class="who"><b>${esc(i.name)}</b> · DOB ${esc(i.dob)}<br>PAN ${esc(i.pan)} · Aadhaar ${esc(i.id_number)} · Mobile ${esc(i.phone)}<br>${esc(i.employer)} · ${inr(+i.net_pay)}/mo · A/c ${esc(i.account_no)} · ${esc(i.ifsc)}<br>Consumer no ${esc(i.consumer_no)} · <a href="/test-documents/${slug(i.name)}/" target="_blank">documents</a></div>`).join("")
+      : `<p class="note">Connected to TrueID: use identities from TrueID's test kit for PAN and Aadhaar.</p>`}</div>`;
+  $("#dbtn").onclick = () => ($("#dp").hidden = !$("#dp").hidden);
+})();
+render();
+</script>
+</body>
+</html>

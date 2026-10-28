@@ -12,10 +12,24 @@ from app.config import GEN, PRE
 router = APIRouter(prefix="/mock", tags=["mock registries"])
 
 
+class RegistryUnavailable(Exception):
+    """Raised when a registry source cannot answer (distinct from a negative 'not found' lookup)."""
+
+
 @lru_cache(maxsize=1)
-def db() -> dict:
+def _db() -> dict | None:
     p = GEN / "registry.json"
-    return json.loads(p.read_text()) if p.exists() else {"uidai": {}, "pan": {}, "telecom": {}, "ckyc": {}, "bureau": {}}
+    try:
+        return json.loads(p.read_text()) if p.exists() else None
+    except json.JSONDecodeError:
+        return None
+
+
+def db() -> dict:
+    d = _db()
+    if d is None:
+        raise RegistryUnavailable("mock registry data not loaded")
+    return d
 
 
 _face_cache: dict[str, np.ndarray] = {}

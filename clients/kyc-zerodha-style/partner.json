@@ -1,0 +1,10 @@
+{
+  "id": "tideway",
+  "name": "Tideway Securities",
+  "profile": "full_kyc",
+  "prefix": "T",
+  "port": 3011,
+  "defaultKey": "tw_test_9c2e61b07d4a",
+  "opsPasscode": "tideway-ops",
+  "replicates": "https://signup.zerodha.com/"
+}

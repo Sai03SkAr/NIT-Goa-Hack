@@ -47,7 +47,7 @@ def attack(f, ctrl, cands, max_steps=12):
 
 def main():
     df = pd.read_csv(PRE / "features.csv")
-    cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor")]
+    cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor", "ev", "meta")]  # ev_/meta_: policy evidence, kept for the decision
     ctrl = controllable(cols)
     gen_tr = df[(df.day < 20) & (df.label == 0)]
     cands = {c: sorted(set(np.nanquantile(gen_tr[c], [.1, .5, .9]).round(4))) for c in ctrl}

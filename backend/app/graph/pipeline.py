@@ -1,6 +1,7 @@
 """LangGraph StateGraph: ingest -> {document, biometric, behavior, registry} in parallel -> correlation -> fusion
--> router (REVIEW & not stepped up -> step_up -> fusion) -> decide -> explain -> persist.
-No LLM in the decision path: 'explain' runs after the decision is fixed."""
+-> router (REVIEW -> step_up, display only) -> decide -> explain -> persist.
+The band comes from app/policy.py alone. The simulated voice step-up is shown to the analyst but never changes it,
+and no LLM is in the decision path: 'explain' runs after the decision is fixed."""
 import json
 import math
 import operator
@@ -11,7 +12,7 @@ from typing import Annotated, Any, TypedDict
 import numpy as np
 from langgraph.graph import END, START, StateGraph
 
-from app import db
+from app import db, policy
 from app.config import LIVE_HISTORY
 from app.fusion import fraud_type, model
 from app.llm.summary import summarize
@@ -21,7 +22,7 @@ from app.modules.correlation import agent as cor
 from app.modules.correlation.history import History
 from app.modules.document import agent as doc
 from app.modules.registry import agent as regm
-from app.modules.registry.mocks import registry_face, registry_face_url
+from app.modules.registry.mocks import RegistryUnavailable, registry_face, registry_face_url
 
 
 class State(TypedDict, total=False):
@@ -63,22 +64,32 @@ def document_node(s: State):
 
 def biometric_node(s: State):
     a = s["app"]
-    ext = bio.extract(s["selfie_bgr"], doc.normalize(s["card_bgr"]))
-    live = dict(a.get("liveness") or {})
-    if s.get("frames"):
-        chk = bio.verify_frames(s["frames"])
-        live["frames_consistent"] = chk["consistent"]
-        live["server_check"] = chk
+    ext = bio.extract(s["selfie_bgr"], doc.normalize(s["card_bgr"]), s.get("selfie_raw"))
     emb = ext["selfie"]["emb"] if ext["selfie"] else None
-    reuse = Runtime.hist.face_matches(emb, a["form"]["name"])
-    r = bio.assess(ext, registry_face(a["form"]["id_number"]), live, a["device"].get("camera_labels", []), reuse,
-                   registry_face_url(a["form"]["id_number"]), a["device"].get("active_camera"))
-    return {"modules": {"biometric": {**r.model_dump(), "_emb": emb}}}
+    media = ext["passive"]["dhash"]
+    ch = a.get("challenge") or {}
+    if not ch:
+        live = bio.not_provided("upload" if not s.get("frames") else "no_challenge")
+    elif ch.get("status") != "VALID":
+        live = bio.challenge_rejected(ch.get("status", "UNKNOWN"))
+    else:
+        live = bio.verify_challenge(s.get("frames") or [], ch["sequence"], emb)
+    try:
+        reg_emb, reg_url, reg_ok = registry_face(a["form"]["id_number"]), registry_face_url(a["form"]["id_number"]), True
+    except RegistryUnavailable:
+        reg_emb, reg_url, reg_ok = None, None, False
+    with Runtime.lock:
+        reuse = Runtime.hist.face_matches(emb, a["form"]["name"]) | {"media": Runtime.hist.media_matches(media)}
+    r = bio.assess(ext, reg_emb, live, a["device"].get("camera_labels", []), reuse, reg_url,
+                   a["device"].get("active_camera"), registry_available=reg_ok)
+    return {"modules": {"biometric": {**r.model_dump(), "_emb": emb, "_media": media}}}
 
 
 def behavior_node(s: State):
     rec = History.record(s["app"], None)
-    return {"modules": {"behavior": beh.assess(s["app"], rec, Runtime.hist).model_dump()}}
+    with Runtime.lock:
+        r = beh.assess(s["app"], rec, Runtime.hist)
+    return {"modules": {"behavior": r.model_dump()}}
 
 
 def registry_node(s: State):
@@ -87,13 +98,9 @@ def registry_node(s: State):
 
 def correlation_node(s: State):
     emb = s["modules"]["biometric"].get("_emb")
-    rec = History.record(s["app"], emb)
+    rec = History.record(s["app"], emb, s["modules"]["biometric"].get("_media"))
     with Runtime.lock:
         r = cor.assess(rec, Runtime.hist, commit=True)
-        a = s["app"]
-        with open(LIVE_HISTORY, "a") as fh:  # the graph is in memory; this log lets a restart rebuild it
-            fh.write(json.dumps({"app": {k: a[k] for k in ("app_id", "ts", "form", "device", "telemetry")},
-                                 "emb": None if emb is None else [float(x) for x in emb]}) + "\n")
     return {"modules": {"correlation": r.model_dump()}, "rec": {"app_id": rec["app_id"]}}
 
 
@@ -101,25 +108,18 @@ def fusion_node(s: State):
     feats = {}
     for m in s["modules"].values():
         feats.update(m["features"])
-    d = model.decide(feats, Runtime.bands)
-    if s.get("stepped_up"):
-        v = s["step_up"]["voice"]
-        p = min(max(d["prob"], 1e-4), 1 - 1e-4)
-        p2 = 1 / (1 + math.exp(-(math.log(p / (1 - p)) + 2.5 * (0.5 - v))))
-        d["prob_before_step_up"], d["prob"] = d["prob"], p2
-        b = model.band(p2, Runtime.bands)
-        d["band"] = d["forced"] if d["forced"] == "REJECT" else b
-    return {"feats": feats, "decision": d}
+    return {"feats": feats, "decision": model.decide(feats, Runtime.bands)}
 
 
 def route(s: State):
-    return "step_up" if s["decision"]["band"] == "REVIEW" and not s.get("stepped_up") and not s["decision"]["forced"] else "decide"
+    return "step_up" if s["decision"]["band"] == "REVIEW" else "decide"
 
 
 def step_up_node(s: State):
-    """Real KYC escalates instead of rejecting outright. Voice is SIMULATED (badge in UI)."""
+    """Real KYC escalates instead of rejecting outright. Voice is SIMULATED: shown to the analyst, never scored."""
     v = bio.simulated_voice(s["app"]["app_id"], s["feats"].get("bio_sim_registry", float("nan")))
-    return {"stepped_up": True, "step_up": {"voice": round(v, 3), "simulated": True, "challenge": "voice_passphrase"}}
+    return {"stepped_up": True, "step_up": {"voice": round(v, 3), "simulated": True, "challenge": "voice_passphrase",
+                                            "affects_decision": False}}
 
 
 def decide_node(s: State):
@@ -134,23 +134,32 @@ def _public_modules(s):
 def explain_node(s: State):
     d = s["decision"]
     case = {"band": d["band"], "prob": d["prob"], "fraud_label": d["fraud_label"], "action": d["fraud_action"],
-            "modules": _public_modules(s), "shap": d.get("shap", [])}
+            "modules": _public_modules(s), "shap": d.get("shap", []),
+            "rule_codes_ev": [c for c in d.get("rule_codes", []) if c.startswith("EV_") or c == "MODEL_UNAVAILABLE"]}
     text, src = summarize(case)
     return {"summary": text, "summary_source": src}
 
 
 def persist_node(s: State):
     a, d = s["app"], s["decision"]
+    emb = s["modules"]["biometric"].get("_emb")
+    with Runtime.lock, open(LIVE_HISTORY, "a") as fh:  # written once the case is final; a restart replays it
+        fh.write(json.dumps({"app": {k: a[k] for k in ("app_id", "ts", "form", "device", "telemetry")},
+                             "emb": None if emb is None else [float(x) for x in emb],
+                             "media": s["modules"]["biometric"].get("_media")}) + "\n")
     with db.session() as ses:
         ses.merge(db.Application(
             app_id=a["app_id"], ts=a["ts"], source=a.get("source", "live"),
             name=a["form"]["name"], id_last4=a["form"]["id_number"][-4:], form_masked=db.mask_form(a["form"]),
             prob=d["prob"], band=d["band"], forced=d.get("forced"), rule_codes=d.get("rule_codes", []),
+            evidence=policy.evidence_list(s["feats"]), model_status=d.get("model_status", ""),
+            policy_version=d.get("policy_version", ""), step_up=s.get("step_up") or {},
             fraud_type=d["fraud_type"], fraud_label=d["fraud_label"], action=d["fraud_action"],
             modules=_public_modules(s), shap=d.get("shap", []), summary=s.get("summary", ""),
             stepped_up=bool(s.get("stepped_up")), card_path=a.get("card_path", ""), selfie_path=a.get("selfie_path", ""),
             truth_label=a.get("label"), truth_type=a.get("fraud_type")))
-        db.audit(ses, a["app_id"], f"decision:{d['band']}", f"p={d['prob']:.3f} type={d['fraud_type']}")
+        p = "model unavailable" if d["prob"] is None else f"p={d['prob']:.3f}"
+        db.audit(ses, a["app_id"], f"decision:{d['band']}", f"{p} type={d['fraud_type']} {d['policy_version']}")
         ses.commit()
     return {"persisted": True}
 
@@ -168,7 +177,7 @@ def build():
     g.add_edge(["document", "biometric", "behavior", "registry"], "correlation")
     g.add_edge("correlation", "fusion")
     g.add_conditional_edges("fusion", route, {"step_up": "step_up", "decide": "decide"})
-    g.add_edge("step_up", "fusion")
+    g.add_edge("step_up", "decide")
     g.add_edge("decide", "explain")
     g.add_edge("explain", "persist")
     g.add_edge("persist", END)
@@ -190,10 +199,12 @@ def node_event(node: str, update: dict) -> dict:
     ev = {"node": node}
     for m in (update.get("modules") or {}).values():
         ev.update({"module": m["module"], "risk": m["risk"], "reasons": [r["code"] for r in m["reasons"]],
+                   "reason_texts": {r["code"]: r["text"] for r in m["reasons"]},
                    "latency_ms": m["latency_ms"], "simulated": m.get("simulated", False)})
     if "decision" in update:
         d = update["decision"]
-        ev.update({k: d.get(k) for k in ("prob", "band", "forced", "fraud_label", "fraud_action") if k in d})
+        ev.update({k: d.get(k) for k in ("prob", "band", "forced", "rule_codes", "fraud_label", "fraud_action",
+                                          "approval_eligible", "unresolved", "model_status") if k in d})
     if "step_up" in update:
         ev["step_up"] = update["step_up"]
     if "summary" in update:

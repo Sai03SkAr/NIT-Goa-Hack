@@ -1,4 +1,7 @@
-"""SQLite via SQLModel: applications (masked PII only) + append-only audit log."""
+"""SQLite via SQLModel: applications (masked PII only) + append-only, hash-chained audit log."""
+import hashlib
+import json
+import threading
 from datetime import datetime
 
 from sqlalchemy import JSON, Column
@@ -16,7 +19,7 @@ class Application(SQLModel, table=True):
     name: str = ""
     id_last4: str = ""
     form_masked: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    prob: float = 0.0
+    prob: float | None = None                  # calibrated model probability; None when the model was unavailable
     band: str = Field(default="REVIEW", index=True)
     forced: str | None = None
     rule_codes: list = Field(default_factory=list, sa_column=Column(JSON))
@@ -25,6 +28,10 @@ class Application(SQLModel, table=True):
     action: str = ""
     modules: list = Field(default_factory=list, sa_column=Column(JSON))
     shap: list = Field(default_factory=list, sa_column=Column(JSON))
+    evidence: list = Field(default_factory=list, sa_column=Column(JSON))   # policy check statuses
+    model_status: str = ""
+    policy_version: str = ""
+    step_up: dict = Field(default_factory=dict, sa_column=Column(JSON))    # simulated, display only
     summary: str = ""
     stepped_up: bool = False
     status: str = "open"                       # open | approved | rejected (analyst)
@@ -41,6 +48,8 @@ class AuditLog(SQLModel, table=True):
     actor: str = "system"
     action: str = ""
     note: str = ""
+    prev_hash: str = ""
+    hash: str = ""              # sha256(prev_hash + this entry): editing or deleting any row breaks the chain
 
 
 def init():
@@ -61,8 +70,35 @@ def mask_form(form: dict) -> dict:
     return m
 
 
-def audit(s: Session, app_id: str, action: str, note: str = "", actor: str = "system"):
-    s.add(AuditLog(app_id=app_id, action=action, note=note, actor=actor))
+_audit_lock = threading.Lock()
+
+
+def _entry_hash(prev: str, e: AuditLog) -> str:
+    body = json.dumps([e.app_id, e.ts, e.actor, e.action, e.note], ensure_ascii=False)
+    return hashlib.sha256((prev + body).encode()).hexdigest()
+
+
+def audit(_s: Session | None, app_id: str, action: str, note: str = "", actor: str = "system"):
+    """Appends one chained entry in its own transaction (so concurrent writers cannot fork the chain).
+    The caller's session is accepted for call-site compatibility; the entry does not wait for its commit."""
+    with _audit_lock, Session(engine) as s:
+        last = s.exec(select(AuditLog).order_by(AuditLog.id.desc()).limit(1)).first()
+        e = AuditLog(app_id=app_id, action=action, note=note, actor=actor, prev_hash=last.hash if last else "")
+        e.hash = _entry_hash(e.prev_hash, e)
+        s.add(e)
+        s.commit()
+
+
+def verify_audit() -> dict:
+    """Walk the chain; report the first entry whose content or link no longer matches."""
+    prev, n = "", 0
+    with Session(engine) as s:
+        for e in s.exec(select(AuditLog).order_by(AuditLog.id)):
+            n += 1
+            if e.prev_hash != prev or e.hash != _entry_hash(prev, e):
+                return {"ok": False, "entries": n, "first_bad_id": e.id}
+            prev = e.hash
+    return {"ok": True, "entries": n, "head": prev[:16]}
 
 
 __all__ = ["Application", "AuditLog", "init", "session", "mask_form", "audit", "select"]

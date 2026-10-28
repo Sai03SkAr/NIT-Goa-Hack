@@ -3,8 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Crosshair, Play, ShieldCheck, Swords } from "lucide-react";
-import { Section, Stat, pct } from "@/components/ui";
-import { type AppRow, get, post } from "@/lib/api";
+import { Section, Stat, pct, Finding } from "@/components/ui";
+import { type AppRow, fileUrl, get, post } from "@/lib/api";
 import { AXIS, BRAND, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
 
 
@@ -24,6 +24,7 @@ export default function AttackLab() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Attack Lab</h1>
         <p className="mt-1 max-w-4xl text-sm text-muted">We attack our own system. Each attack perturbs real test cases, re-runs the real document and biometric extraction, and re-scores with the trained fusion. Sample: {d.n_sample} test applications ({d.n_fraud} fraud).</p>
+        {d.evaluation_kind && <p className="mt-1 max-w-4xl text-xs text-dim">Evaluation kind: {d.evaluation_kind}.</p>}
       </div>
       {adaptive && (
         <div className="grid gap-4 md:grid-cols-4">
@@ -69,10 +70,12 @@ function Sweep({ a }: { a: any }) {
           <Line dataKey="fused_auc" name="Fused ROC-AUC" stroke="#8fa2d8" strokeWidth={2} dot />
           <Line dataKey="doc_only_auc" name="Document module alone, AUC" stroke={REVIEW} strokeDasharray="5 4" dot />
           <Line dataKey="pixel_only_auc" name="Pixel forensics alone, AUC" stroke={REJECT} strokeDasharray="3 3" dot />
-          <Line dataKey="fused_fpr" name="Fused FPR" stroke={MUTED} strokeWidth={1.5} dot />
+          <Line dataKey="fused_fpr" name="Genuine flagged (review or reject)" stroke={MUTED} strokeWidth={1.5} dot />
+          <Line dataKey="genuine_rejected" name="Genuine rejected" stroke={REJECT} strokeWidth={2} dot />
+          <Line dataKey="fraud_approved" name="Fraud approved" stroke="#8a6a00" strokeWidth={2} dot />
         </LineChart>
       </ResponsiveContainer>
-      <p className="mt-2 text-xs text-dim">Single pixel-level detectors degrade as image quality drops; the fused decision holds because QR signatures, registries, biometrics and the graph don't depend on pixels.</p>
+      <p className="mt-2 text-xs text-dim">Single pixel-level detectors degrade as image quality drops. The fused decision holds because signed QRs, registries and the graph don't depend on pixels; when photos are too poor to judge, people are asked to retake (review) rather than rejected.</p>
     </>
   );
 }
@@ -142,18 +145,52 @@ function LiveAttack() {
       {res && (
         <div className="fade-up mt-5 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
           <img src={res.image} alt="attacked card" className="rounded-lg border border-line" />
-          <div className="space-y-3 text-sm">
-            {(["before", "after"] as const).map((k) => (
-              <div key={k} className="rounded-xl border border-line-2 p-3">
-                <div className="flex items-center justify-between"><span className="label">{k === "before" ? "Clean card" : "Attacked card"}</span>
-                  <span className="mono">doc risk {res[k].risk.toFixed(2)}, pixel {res[k].forensic.toFixed(2)}</span></div>
-                <div className="mt-2 flex flex-wrap gap-1">{res[k].reasons.length ? res[k].reasons.map((r: string) => <span key={r} className="chip mono text-[10px]">{r}</span>) : <span className="text-xs text-dim">no signals</span>}</div>
-                <div className="mono mt-2 text-[11px] text-dim">printed DOB {res[k].ocr?.dob || "-"}, signed QR DOB {res[k].qr?.d ?? "-"}, QR {res[k].qr_valid ? "valid" : "invalid/missing"}</div>
-              </div>
-            ))}
+          <div className="space-y-3">
+            {(["before", "after"] as const).map((k) => <AttackResult key={k} title={k === "before" ? "Clean card" : "Attacked card"} r={res[k]} />)}
           </div>
         </div>
       )}
     </Section>
+  );
+}
+
+type Side = { risk: number; forensic: number; reasons: { code: string; text: string; weight: number }[]; ocr?: Record<string, string>;
+  qr?: Record<string, string>; qr_valid?: boolean; trufor?: { score: number; heatmap: string } | null };
+
+function AttackResult({ title, r }: { title: string; r: Side }) {
+  const found = r.reasons.filter((x) => x.weight > 0);
+  const rows: [string, string | undefined, string | undefined][] = [
+    ["Name", r.ocr?.name, r.qr?.n], ["Date of birth", r.ocr?.dob, r.qr?.d], ["ID number", r.ocr?.id_number, r.qr?.id],
+  ];
+  const same = (a?: string, b?: string) => !a || !b || a.replace(/\s/g, "").toUpperCase() === b.replace(/\s/g, "").toUpperCase();
+  return (
+    <div className="rounded-xl border border-line bg-panel p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium">{title}</span>
+        <span className={clsx("rounded-full px-2.5 py-0.5 text-xs font-medium", found.length ? "bg-reject/10 text-reject" : "bg-approve/10 text-approve")}>
+          {found.length ? `${found.length} finding${found.length > 1 ? "s" : ""}` : "No findings"}
+        </span>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
+        {[["Document risk", r.risk.toFixed(2)], ["Pixel forensics", r.forensic.toFixed(2)], ["Issuer signature", r.qr_valid ? "Valid" : "Missing or invalid"]].map(([k, v]) => (
+          <div key={k}><dt className="text-dim">{k}</dt><dd className="mt-0.5 text-sm tabular-nums text-fg">{v}</dd></div>
+        ))}
+      </dl>
+      <table className="mt-3 w-full text-xs">
+        <thead><tr className="text-left text-dim"><th className="py-1 font-normal">Field</th><th className="font-normal">Printed on card</th><th className="font-normal">Signed in QR</th></tr></thead>
+        <tbody className="tabular-nums">
+          {rows.map(([k, printed, signed]) => (
+            <tr key={k} className="border-t border-line/60">
+              <td className="py-1.5 text-muted">{k}</td>
+              <td className={same(printed, signed) ? "text-fg" : "font-medium text-reject"}>{printed || "unreadable"}</td>
+              <td className="text-fg">{signed ?? "none"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {found.length > 0 && <ul className="mt-3 space-y-1.5 border-t border-line pt-3">{found.map((x) => <Finding key={x.code} text={x.text} code={x.code} weight={x.weight} />)}</ul>}
+      {r.trufor && <div className="mt-3 border-t border-line pt-2.5 text-xs text-muted">TruFor score <span className="tabular-nums text-fg">{r.trufor.score.toFixed(2)}</span>
+        {" · "}<a href={fileUrl(r.trufor.heatmap)} target="_blank" className="text-brand hover:underline">View heatmap</a></div>}
+    </div>
   );
 }

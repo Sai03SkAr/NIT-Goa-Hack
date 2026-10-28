@@ -15,3 +15,7 @@ frontend/.next/
 logs/
 backend/live_history.jsonl
 testkit/
+models/trufor/
+backend/.secrets/
+.pytest_cache/
+backend/.pytest_cache/

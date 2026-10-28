@@ -1,12 +1,12 @@
 """Investigator chat (plan 4.6.8). Tools run deterministically from the IDs / feature names in the question;
 the LLM (if configured) only phrases an answer from the tool results and may cite only codes found there."""
 import json
-import os
 import re
 from collections import Counter
 
 from app import db
-from app.schemas import REASONS
+from app.llm import client as llm
+from app.schemas import REASONS, code_text
 
 ID_RE = re.compile(r"\b(?:A\d{5}|L[0-9A-F]{8}|RS[0-9A-F]{4}\d+)\b", re.I)
 
@@ -40,7 +40,7 @@ def get_case(app_id: str) -> dict | None:
             return None
         reasons = sorted(((m["module"], x["code"], x["weight"]) for m in r.modules for x in m["reasons"]),
                          key=lambda t: -t[2])
-        return {"app_id": r.app_id, "name": r.name, "band": r.band, "prob": round(r.prob, 3), "pattern": r.fraud_label,
+        return {"app_id": r.app_id, "name": r.name, "band": r.band, "prob": None if r.prob is None else round(r.prob, 3), "pattern": r.fraud_label,
                 "action": r.action, "hard_rules": r.rule_codes, "reasons": [c for _, c, w in reasons if w > 0][:8],
                 "top_shap": r.shap[:3]}
 
@@ -119,18 +119,15 @@ def template(question: str, calls: list[dict]) -> str:
 def answer(question: str, hist) -> dict:
     calls = run_tools(question, hist)
     text, source = template(question, calls), "template"
-    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if key and calls:
-        try:
-            from google import genai
-            prompt = ("You are assisting a KYC fraud analyst. Answer the question in 2-5 sentences using ONLY the tool "
-                      "results below. Cite reason codes in [BRACKETS] exactly as they appear. Never invent IDs, numbers, "
-                      f"codes or decisions.\n\nQuestion: {question}\n\nTool results: {json.dumps(calls, default=str)}")
-            out = genai.Client(api_key=key).models.generate_content(
-                model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), contents=prompt).text or ""
-            allowed = set(re.findall(r"[A-Z]{3}_[A-Z_]+", json.dumps(calls, default=str)))
-            if out and set(re.findall(r"\[([A-Z]{3}_[A-Z_]+)\]", out)) <= allowed:
-                text, source = out.strip(), "llm"
-        except Exception:
-            pass
+    if calls:
+        raw = json.dumps(calls, default=str)
+        allowed = set(llm.CODE.findall(raw))
+        meaning = {c: code_text(c) for c in sorted(allowed)}
+        out = llm.complete("You are assisting a KYC fraud analyst. Answer the question in 2-4 sentences of plain English "
+                           "using ONLY the tool results below. Describe each finding in words, then put its code in square "
+                           "brackets after it, one code per bracket. Never list codes on their own and never invent IDs, "
+                           f"numbers, codes or decisions.\n\nQuestion: {question}\n\nCode meanings: {json.dumps(meaning)}"
+                           f"\n\nTool results: {raw}")
+        if out and llm.cites_only(out, allowed):
+            text, source = out, "llm"
     return {"answer": text, "source": source, "tools": calls}

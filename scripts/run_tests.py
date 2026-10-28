@@ -1,16 +1,32 @@
 """End-to-end acceptance test: builds a fresh test kit on the running backend, submits every scenario through
-/api/apply exactly like the browser does, waits for the pipeline, and checks the decision against the expectation.
+/api/apply exactly like the browser does (applicant session, consent, server-issued liveness challenge), polls the
+job, and checks the decision against the expectation.
+
+Liveness is answered with FIXTURE PHOTOS of the same person (frontal, turned, mirrored), verified server-side like
+webcam frames. This exercises the real protocol; it is not a live camera session.
 
 Run (backend must be up):  .venv/bin/python scripts/run_tests.py
+Analyst key: TRUEID_ANALYST_KEY or backend/.secrets/analyst_key.
 Writes a report to data/generated/testkit/<tag>/REPORT.md. Exit code 1 if any scenario fails."""
 import json
+import os
 import random
 import sys
+import time
+import uuid
 from pathlib import Path
 
 import httpx
 
-API = "http://127.0.0.1:8000"
+API = os.getenv("TRUEID_API", "http://127.0.0.1:8000")
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def analyst_key() -> str:
+    k = os.getenv("TRUEID_ANALYST_KEY")
+    if k:
+        return k
+    return (ROOT / "backend" / ".secrets" / "analyst_key").read_text().strip()
 
 
 def signals(kind: str, seed: str) -> dict:
@@ -26,26 +42,40 @@ def signals(kind: str, seed: str) -> dict:
             "keystroke_vec": [round(v.gauss(0, 1), 3) for _ in range(12)]}
 
 
-def run_one(c: httpx.Client, s: dict, tag: str) -> dict:
+def run_one(c: httpx.Client, s: dict, tag: str, consent_version: str) -> dict:
     card, selfie = c.get(API + s["card"]).content, c.get(API + s["selfie"]).content
-    payload = {"form": s["form"], "source": "test",
+    ch = c.post(API + "/api/liveness/challenge").json()
+    order = ["neutral", *ch["sequence"]]
+    frames = [("frames", (f"{k}.jpg", c.get(API + s["frames"][k]).content, "image/jpeg")) for k in order]
+    payload = {"form": s["form"], "challenge_id": ch["challenge_id"],
+               "consent": {"accepted": True, "version": consent_version},
                "device": {"device_id": s["device_id"], "user_agent": "scripts/run_tests.py",
                           "camera_labels": [s["camera"]], "active_camera": s["camera"]},
-               "telemetry": signals(s["signals"], s["id"] + tag),
-               "liveness": {"challenges": ["turn_left", "blink"], "passed": s["liveness_passed"],
-                            "virtual_camera": "virtual" in s["camera"].lower()}}
-    r = c.post(API + "/api/apply", data={"payload": json.dumps(payload)},
-               files={"card": ("card.jpg", card, "image/jpeg"), "selfie": ("selfie.jpg", selfie, "image/jpeg")})
+               "telemetry": signals(s["signals"], s["id"] + tag)}
+    r = c.post(API + "/api/apply", data={"payload": json.dumps(payload)}, headers={"Idempotency-Key": uuid.uuid4().hex},
+               files=[("card", ("card.jpg", card, "image/jpeg")), ("selfie", ("selfie.jpg", selfie, "image/jpeg")), *frames])
     r.raise_for_status()
     app_id = r.json()["app_id"]
-    with c.stream("GET", f"{API}/api/apply/{app_id}/events", timeout=120) as st:
-        for line in st.iter_lines():
-            if line.startswith("data:") and '"error"' in line:
-                raise RuntimeError(line)
+    after, t0 = 0, time.time()
+    while True:
+        ev = c.get(f"{API}/api/apply/{app_id}/events", params={"after": after}).json()
+        if any(e.get("node") == "error" for e in ev["events"]):
+            raise RuntimeError(f"{s['id']}: pipeline error {ev['events']}")
+        after = ev["next"]
+        if ev["done"]:
+            break
+        if time.time() - t0 > 180:
+            raise TimeoutError(s["id"])
+        time.sleep(0.5)
     case = c.get(f"{API}/api/apps/{app_id}").json()
     codes = [x["code"] for m in case["modules"] for x in m["reasons"] if x["weight"] > 0]
+    live = next((m["evidence"].get("liveness", {}) for m in case["modules"] if m["module"] == "biometric"), {})
     return {"app_id": app_id, "band": case["band"], "prob": case["prob"], "pattern": case["fraud_label"],
-            "rules": case["rule_codes"], "codes": codes}
+            "rules": case["rule_codes"], "codes": codes, "liveness": live.get("status")}
+
+
+def fmt(p):
+    return "n/a " if p is None else f"{p:.2f}"
 
 
 def main() -> int:
@@ -55,21 +85,25 @@ def main() -> int:
         except Exception:
             print("Backend not reachable at", API, "- start it with ./scripts/run_backend.sh")
             return 2
-        kit = c.post(API + "/api/testkit", timeout=300).json()
+        c.post(API + "/api/auth/login", json={"key": analyst_key()}).raise_for_status()
+        consent_version = c.post(API + "/api/session").json()["consent_version"]
+        kit = c.post(API + "/api/testkit", timeout=1200).json()  # finds unseen faces with usable head turns: minutes on CPU
         print(f"Test kit {kit['tag']}: {len(kit['scenarios'])} scenarios -> {kit['folder']}\n")
         rows, failed = [], 0
         for s in kit["scenarios"]:
-            res = run_one(c, s, kit["tag"])
+            res = run_one(c, s, kit["tag"], consent_version)
             ok = res["band"] in s["expect"]
             failed += not ok
             rows.append((s, res, ok))
             print(f"{'PASS' if ok else 'FAIL'}  {s['id']:<20} expected {'/'.join(s['expect']):<14} got {res['band']:<8}"
-                  f" p={res['prob']:.2f}  {res['pattern']:<28} {', '.join(res['codes'][:4])}")
-    lines = [f"# Test report — kit {kit['tag']}", "", f"{len(rows) - failed}/{len(rows)} scenarios behaved as expected.", "",
-             "| Result | Scenario | Expected | Got | p(fraud) | Pattern | Top signals | Case |", "|---|---|---|---|---|---|---|---|"]
+                  f" p={fmt(res['prob'])}  liveness={res['liveness']:<12} {res['pattern']:<26} {', '.join(res['codes'][:4])}")
+    lines = [f"# Test report, kit {kit['tag']}", "", f"{len(rows) - failed}/{len(rows)} scenarios behaved as expected.", "",
+             "Liveness answered with fixture photos of the same person, verified server-side (not a live camera).", "",
+             "| Result | Scenario | Expected | Got | p(fraud) | Liveness | Pattern | Top signals | Case |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for s, r, ok in rows:
-        lines.append(f"| {'PASS' if ok else '**FAIL**'} | {s['title']} | {' / '.join(s['expect'])} | {r['band']} | {r['prob']:.2f} | "
-                     f"{r['pattern']} | {', '.join(r['codes'][:4]) or '—'} | {r['app_id']} |")
+        lines.append(f"| {'PASS' if ok else '**FAIL**'} | {s['title']} | {' / '.join(s['expect'])} | {r['band']} | {fmt(r['prob'])} | "
+                     f"{r['liveness']} | {r['pattern']} | {', '.join(r['codes'][:4]) or '-'} | {r['app_id']} |")
     Path(kit["folder"], "REPORT.md").write_text("\n".join(lines) + "\n")
     print(f"\n{len(rows) - failed}/{len(rows)} passed. Report: {kit['folder']}/REPORT.md")
     return 1 if failed else 0

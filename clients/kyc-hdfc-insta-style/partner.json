@@ -1,0 +1,10 @@
+{
+  "id": "meridian",
+  "name": "Meridian Bank",
+  "profile": "limited_kyc",
+  "prefix": "M",
+  "port": 3012,
+  "defaultKey": "mb_test_5a17f3c8e260",
+  "opsPasscode": "meridian-ops",
+  "replicates": "https://applyonline.hdfc.bank.in/savings-account/insta-savings/open-instant-savings-account-online.html"
+}

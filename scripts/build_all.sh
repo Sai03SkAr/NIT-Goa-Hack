@@ -21,7 +21,9 @@ if [ ! -f "$LFW" ]; then  # ~243 MB; parallel ranges because some networks throt
   tar -tzf "$LFW" > /dev/null  # fail fast on a corrupt archive
 fi
 $PY data/gen_population.py --n "$N"
+rm -rf precomputed/extract  # cached extractions belong to the previous population and code
 $PY eval/build_dataset.py "$WORKERS"
+$PY eval/augment.py
 $PY eval/train.py
 $PY eval/adaptive_attacker.py
 $PY eval/run_attacks.py "$WORKERS"

@@ -2,8 +2,9 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck, UserPlus } from "lucide-react";
-import type { Band } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { KeyRound, LogOut, ShieldCheck, UserPlus } from "lucide-react";
+import { type Band, ApiError, get, post } from "@/lib/api";
 import { TYPE_COLORS } from "@/lib/theme";
 
 export { TYPE_COLORS };
@@ -84,8 +85,42 @@ const NAV = [
   { href: "/dashboard/chat", label: "Investigator" },
 ];
 
+/** The console is analyst-only: the server enforces it, this just asks for the key once per session. */
+function SignIn({ onDone }: { onDone: () => void }) {
+  const [key, setKey] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setErr("");
+    try { await post("/api/auth/login", { key }); onDone(); }
+    catch (x) { setErr(x instanceof ApiError && x.status === 401 ? "That key is not right." : x instanceof ApiError && x.status === 429 ? "Too many attempts. Wait a minute." : String(x)); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="grid min-h-[100dvh] place-items-center px-6">
+      <form onSubmit={submit} className="panel w-full max-w-sm p-7">
+        <Logo />
+        <h1 className="mt-6 text-lg font-semibold tracking-tight">Analyst sign-in</h1>
+        <p className="mt-1 text-sm text-muted">Case files hold identity documents, so the console needs the analyst key. It is in <span className="mono text-xs">backend/.secrets/analyst_key</span> on the server.</p>
+        <label className="mt-5 block">
+          <span className="label">Analyst key</span>
+          <input type="password" autoComplete="current-password" className="input mono mt-1.5" value={key} onChange={(e) => setKey(e.target.value)} autoFocus />
+        </label>
+        {err && <p className="mt-2 text-sm text-reject">{err}</p>}
+        <button className="btn btn-primary mt-5 w-full" disabled={!key || busy}><KeyRound className="size-4" />{busy ? "Signing in…" : "Sign in"}</button>
+        <Link href="/kyc" className="mt-4 block text-center text-xs text-dim underline-offset-2 hover:underline">Applying for an account? Go to verification</Link>
+      </form>
+    </div>
+  );
+}
+
 export function AnalystShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const [auth, setAuth] = useState<boolean | null>(null);
+  const check = () => get<{ analyst: boolean }>("/api/auth/me").then((r) => setAuth(r.analyst)).catch(() => setAuth(false));
+  useEffect(() => { check(); }, []);
+  if (auth === null) return <div className="grid min-h-[100dvh] place-items-center text-sm text-dim">Loading…</div>;
+  if (!auth) return <SignIn onDone={check} />;
   return (
     <div className="min-h-[100dvh]">
       <header className="sticky top-0 z-30 border-b border-line bg-panel">
@@ -103,6 +138,7 @@ export function AnalystShell({ children }: { children: React.ReactNode }) {
             })}
           </nav>
           <Link href="/kyc" className="btn ml-auto"><UserPlus className="size-4" />New application</Link>
+          <button className="btn" title="Sign out" onClick={() => post("/api/auth/logout").then(() => setAuth(false))}><LogOut className="size-4" /></button>
         </div>
       </header>
       <main className="mx-auto max-w-[1400px] px-6 py-7">{children}</main>
@@ -130,4 +166,28 @@ export function PageHeader({ title, children, right }: { title: string; children
       {right}
     </div>
   );
+}
+
+/** One finding in plain language. The internal code stays available on hover for analysts and logs. */
+export function Finding({ text, code, weight = 0.3 }: { text: string; code?: string; weight?: number }) {
+  const color = weight < 0 ? "var(--approve)" : weight >= 0.4 ? "var(--reject)" : weight > 0 ? "var(--review)" : "var(--dim)";
+  return (
+    <li className="flex items-start gap-2.5 text-sm leading-snug" title={code}>
+      <span className="mt-[7px] size-1.5 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+      <span className="text-fg">{text}</span>
+    </li>
+  );
+}
+
+/** Summaries cite codes in [BRACKETS] so the LLM guardrail can check them; readers don't need to see them. */
+export const readable = (text?: string) => (text ?? "").replace(/\s*\[[A-Z0-9_]+\]/g, "");
+
+const AREA: Record<string, string> = { doc: "Card", bio: "Face", beh: "Behaviour", reg: "Registry", cor: "Linked applications" };
+const WORDS: Record<string, string> = { sim: "SIM", qr: "QR", ocr: "OCR", pan: "PAN", ks: "keystroke", iki: "key interval",
+  vel: "velocity", ckyc: "CKYC", cv: "variation", dob: "DOB", id: "ID", comp: "cluster", ip: "IP", "24h": "24 h", "7d": "7 days", "1h": "1 h" };
+/** doc_risk -> "Card: risk"; reg_sim_age_days -> "Registry: SIM age days". */
+export function featureLabel(f: string) {
+  const [area, ...rest] = f.split("_");
+  const words = rest.map((w) => WORDS[w] ?? w).join(" ");
+  return AREA[area] ? `${AREA[area]}: ${words}` : f.replaceAll("_", " ");
 }

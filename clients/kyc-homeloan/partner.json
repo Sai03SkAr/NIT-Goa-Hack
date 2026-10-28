@@ -1,0 +1,9 @@
+{
+  "id": "kestrel",
+  "name": "Kestrel Home Finance",
+  "profile": "lending_full_kyc",
+  "prefix": "K",
+  "port": 3013,
+  "defaultKey": "kh_test_3e8d14b9c702",
+  "opsPasscode": "kestrel-ops"
+}

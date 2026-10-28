@@ -46,8 +46,9 @@ def _features_for(args):
     selfie = fn(cv2.imread(str(GEN / app["selfie_path"])), level)
     d = doc.assess(doc.extract(card), app["form"], datetime.fromisoformat(app["ts"]).date())
     b_ext = bio.extract(selfie, doc.normalize(card))
-    reuse = {"diff_name": base.get("bio_face_reuse_diff_name", 0), "max_sim": base.get("bio_face_reuse_max_sim", 0)}
-    b = bio.assess(b_ext, registry_face(app["form"]["id_number"]), app["liveness"], app["device"]["camera_labels"], reuse,
+    reuse = {"diff_name": base.get("bio_face_reuse_diff_name", 0), "max_sim": base.get("bio_face_reuse_max_sim", 0),
+             "media": base.get("bio_media_reuse", 0)}
+    b = bio.assess(b_ext, registry_face(app["form"]["id_number"]), bio.fixture_liveness(app["liveness"]), app["device"]["camera_labels"], reuse,
                    active_camera=app["device"].get("active_camera"))
     return {**base, **d.features, **b.features}
 
@@ -67,9 +68,12 @@ def summarize(y, scored):
     flag = np.array([s["band"] != "APPROVE" for s in scored])
     doc = np.array([s["doc_risk"] for s in scored])
     pix = np.array([s["pixel"] for s in scored])
-    fused = np.array([max(s["prob"], .95) if s["band"] == "REJECT" else s["prob"] for s in scored])
+    fused = np.array([s["prob"] for s in scored])  # ranking metric on the model probability, never a rule-edited score
     auc = lambda s: round(float(roc_auc_score(y, s)), 4) if len(set(y)) > 1 else None
+    bands = np.array([s["band"] for s in scored])
     return {"fused_recall": round(float(flag[y == 1].mean()), 4), "fused_fpr": round(float(flag[y == 0].mean()), 4),
+            "genuine_rejected": round(float((bands[y == 0] == "REJECT").mean()), 4),
+            "fraud_approved": round(float((bands[y == 1] == "APPROVE").mean()), 4),
             "fused_auc": auc(fused), "doc_only_recall": round(float((doc[y == 1] >= .5).mean()), 4),
             "doc_only_auc": auc(doc), "pixel_only_auc": auc(pix)}
 
@@ -79,7 +83,7 @@ def main(workers=4, n_genuine=100):
     df = pd.read_csv(PRE / "features.csv")
     te = df[df.day >= 20]
     sample = pd.concat([te[te.label == 1], te[te.label == 0].sample(min(n_genuine, (te.label == 0).sum()), random_state=0)])
-    feat_cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor")]
+    feat_cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor", "ev", "meta")]  # ev_/meta_: policy evidence, kept for the decision
     base = {r.app_id: {c: (np.nan if pd.isna(getattr(r, c)) else getattr(r, c)) for c in feat_cols} for r in sample.itertuples()}
     y = sample.label.values
     results = []
@@ -99,6 +103,8 @@ def main(workers=4, n_genuine=100):
     if adaptive.exists():
         results.append(json.loads(adaptive.read_text()))
     (PRE / "attacks.json").write_text(json.dumps({"n_sample": int(len(sample)), "n_fraud": int(y.sum()),
+                                                  "evaluation_kind": "offline re-extraction on synthetic test-split images; "
+                                                                     "liveness is a generator-labelled fixture",
                                                   "attacks": results}, indent=1, default=float))
     print("wrote attacks.json")
 
@@ -123,6 +129,37 @@ def _hero_one(app):
             "forensic_flag": "DOC_FORENSIC_ANOMALY" in codes}
 
 
+def hero_trufor(gen, apps, n=40):
+    """TruFor on clean vs Poisson-edited cards: does it flag the edit, and does its heatmap point at the DOB field?"""
+    from datetime import timedelta
+    from PIL import Image
+    from app.modules.document import trufor
+    from app.modules.document.agent import normalize
+    from app.modules.document.card import FIELD_BOXES, PORTRAIT, poisson_edit
+    from app.modules.document.dates import parse
+    if not trufor.available():
+        return [{"detector": "TruFor", "value": "not installed (./scripts/setup_trufor.sh)"}]
+    box_mean = lambda h, b: float(h[b[1]:b[3], b[0]:b[2]].mean())
+    sc, se, dob_heat, portrait_heat = [], [], [], []
+    for i in list(gen.app_id)[:n]:
+        a = apps[i]
+        clean = normalize(cv2.imread(str(GEN / a["card_path"])))
+        new_dob = (parse(a["form"]["dob"]) - timedelta(days=1461)).strftime("%d/%m/%Y")
+        pil = Image.fromarray(cv2.cvtColor(clean, cv2.COLOR_BGR2RGB))
+        edited = cv2.cvtColor(np.array(poisson_edit(pil, "dob", new_dob)), cv2.COLOR_RGB2BGR)
+        s0, _ = trufor.infer(clean)
+        s1, h1 = trufor.infer(edited)
+        sc.append(s0); se.append(s1)
+        dob_heat.append(box_mean(h1, FIELD_BOXES["dob"])); portrait_heat.append(box_mean(h1, PORTRAIT))
+    yy = np.r_[np.zeros(len(sc)), np.ones(len(se))]
+    print(f"trufor: clean mean {np.mean(sc):.3f} edited mean {np.mean(se):.3f}")
+    return [{"detector": "TruFor score AUC, clean vs edited (0.5 = chance)", "value": round(float(roc_auc_score(yy, np.r_[sc, se])), 3)},
+            {"detector": "TruFor flags edited cards (score >= 0.5)", "value": round(float(np.mean(np.array(se) >= 0.5)), 3)},
+            {"detector": "TruFor flags CLEAN cards too (score >= 0.5)", "value": round(float(np.mean(np.array(sc) >= 0.5)), 3)},
+            {"detector": "TruFor heat on the edited DOB field (mean, 0-1)", "value": round(float(np.mean(dob_heat)), 3)},
+            {"detector": "TruFor heat on the untouched photo (mean, 0-1)", "value": round(float(np.mean(portrait_heat)), 3)}]
+
+
 def hero_attack(apps, te, workers):
     gen = te[te.label == 0].sample(min(60, (te.label == 0).sum()), random_state=2)
     with ProcessPoolExecutor(workers) as ex:
@@ -135,7 +172,7 @@ def hero_attack(apps, te, workers):
            "rows": [{"detector": "Pixel forensics (edge/font/noise) AUC, clean vs edited",
                      "value": round(float(roc_auc_score(yy, np.r_[pb, pa])), 3)},
                     {"detector": "Pixel forensics flag rate on edited cards", "value": round(float(np.mean([r["forensic_flag"] for r in res])), 3)},
-                    {"detector": "TruFor", "value": "not run on CPU in this build (DeepID: winners at chance on this edit)"},
+                    *hero_trufor(gen, apps),
                     {"detector": "Signed QR <-> OCR mismatch catch rate", "value": round(float(np.mean([r["qr_ocr_caught"] for r in res])), 3)}]}
     print("hero:", out["rows"])
     return [out]
@@ -160,7 +197,7 @@ def behavioural(df, apps):
                          {"detector": "Humanized bot recall", "value": round(float(flag[bots.index[hum]].mean()), 3) if hum.any() else None}]})
     vc = te[te.bio_virtual_cam == 1]
     out.append({"id": "virtual_cam", "kind": "single", "name": "Virtual camera injection", "target": "Liveness",
-                "defense": "Device-label hard flag",
+                "defense": "Client-reported camera label (a hint: a determined attacker can rename the device)",
                 "rows": [{"detector": "Virtual-camera sessions blocked", "value": round(float(flag[vc.index].mean()), 3) if len(vc) else None},
                          {"detector": "n sessions", "value": int(len(vc))}]})
     rp = te[(te.bio_liveness_pass == 0)]

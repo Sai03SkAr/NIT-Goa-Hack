@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian Bank · Instant Savings Account</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0a1f44; --blue: #0f4c92; --blue-d: #0b3c75; --ink: #1d2433; --ink-2: #4a5468; --muted: #8a93a6; --line: #dfe3ea;
+    --bg: #f4f6fa; --card: #fff; --ok: #1e8e3e; --err: #d93025; --gold: #f2b631;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 Roboto, -apple-system, "Segoe UI", sans-serif; }
+  header { background: var(--navy); height: 64px; display: flex; align-items: center; }
+  .hbar { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: inline-flex; align-items: center; gap: 8px; background: #fff; color: var(--navy); font-weight: 700; font-size: 14px; letter-spacing: .06em; padding: 5px 10px 5px 6px; border-radius: 2px; }
+  .logo i { width: 20px; height: 20px; display: grid; place-items: center; background: var(--blue); border-radius: 2px; }
+  .logo i::after { content: ""; width: 8px; height: 8px; background: var(--gold); transform: rotate(45deg); }
+  .hbar small { color: #c8d3ea; font-size: 12.5px; }
+
+  .page { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px; display: grid; grid-template-columns: 1fr 470px; gap: 40px; align-items: start; }
+  @media (max-width: 960px) { .page { grid-template-columns: 1fr; padding-top: 0; gap: 0; } }
+  .banner { border-radius: 10px; overflow: hidden; background: linear-gradient(135deg, #0f4c92 0%, #0a1f44 70%); color: #fff; padding: 40px 36px; position: relative; min-height: 420px; }
+  .banner h1 { font-size: 34px; line-height: 1.2; margin: 0 0 10px; font-weight: 700; max-width: 420px; }
+  .banner p { color: #cfdaf0; margin: 0 0 22px; max-width: 420px; }
+  .banner ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; max-width: 420px; }
+  .banner li { display: flex; gap: 10px; align-items: center; font-size: 14.5px; }
+  .banner li::before { content: "✓"; width: 22px; height: 22px; border-radius: 50%; background: rgba(242,182,49,.18); color: var(--gold); display: grid; place-items: center; font-size: 12px; flex: none; }
+  .banner .coin { position: absolute; right: -40px; bottom: -40px; width: 240px; height: 240px; border-radius: 50%; border: 36px solid rgba(255,255,255,.06); }
+  @media (max-width: 960px) { .banner { border-radius: 0; min-height: 0; padding: 24px 20px; margin: 0 -20px 20px; } .banner h1 { font-size: 24px; } .banner ul, .banner .coin { display: none; } }
+
+  .panel { background: var(--card); border-radius: 10px; box-shadow: 0 2px 14px rgba(10,31,68,.08); padding: 28px 28px 30px; }
+  @media (max-width: 960px) { .panel { padding: 22px 18px 24px; } }
+  .panel h2 { font-size: 22px; margin: 0 0 4px; font-weight: 700; color: var(--navy); }
+  .panel .sub { color: var(--ink-2); font-size: 13.5px; margin: 0 0 20px; display: flex; gap: 6px; align-items: center; }
+  .crumb { display: flex; gap: 6px; margin: 0 0 18px; }
+  .crumb span { flex: 1; height: 4px; border-radius: 2px; background: #e6eaf1; } .crumb span.on { background: var(--blue); }
+
+  .fld { position: relative; margin-top: 18px; }
+  .fld label { position: absolute; left: 12px; top: -8px; background: #fff; padding: 0 5px; font-size: 12px; color: var(--ink-2); }
+  .fld input, .fld select { width: 100%; height: 50px; border: 1px solid #c6cdd9; border-radius: 6px; padding: 0 14px; font: inherit; color: var(--ink); outline: 0; background: #fff; }
+  .fld input:focus, .fld select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(15,76,146,.1); }
+  .fld input[readonly] { background: #f6f8fb; color: var(--ink-2); }
+  .fld .pre { position: absolute; left: 14px; top: 0; height: 50px; display: flex; align-items: center; color: var(--ink-2); }
+  .fld .pre + input { padding-left: 56px; }
+  .fld .act { position: absolute; right: 8px; top: 8px; height: 34px; padding: 0 12px; border: 0; background: #eef3fb; color: var(--blue); border-radius: 4px; font: 500 13px Roboto, sans-serif; cursor: pointer; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  @media (max-width: 480px) { .two { grid-template-columns: 1fr; } }
+  .tabs { display: flex; border: 1px solid #c6cdd9; border-radius: 6px; overflow: hidden; margin-top: 18px; }
+  .tabs button { flex: 1; height: 42px; border: 0; background: #fff; font: 500 14px Roboto, sans-serif; color: var(--ink-2); cursor: pointer; }
+  .tabs button.on { background: var(--blue); color: #fff; }
+  .btn { width: 100%; height: 50px; margin-top: 22px; background: var(--blue); color: #fff; border: 0; border-radius: 6px; font: 500 16px Roboto, sans-serif; cursor: pointer; }
+  .btn:hover { background: var(--blue-d); } .btn:disabled { background: #a9b6c9; cursor: not-allowed; }
+  .btn.ghost { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
+  .link { background: none; border: 0; padding: 0; color: var(--blue); font: 500 13.5px Roboto, sans-serif; cursor: pointer; }
+  .err { color: var(--err); font-size: 13px; margin-top: 8px; min-height: 1em; }
+  .chk { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--ink-2); margin-top: 16px; }
+  .chk input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--blue); flex: none; }
+  .note { font-size: 12.5px; color: var(--muted); }
+  .opt { display: block; border: 1px solid #c6cdd9; border-radius: 8px; padding: 14px 16px 14px 44px; margin-top: 12px; cursor: pointer; position: relative; }
+  .opt input { position: absolute; left: 16px; top: 17px; accent-color: var(--blue); width: 16px; height: 16px; }
+  .opt b { display: block; color: var(--navy); font-weight: 500; } .opt span { font-size: 13px; color: var(--ink-2); }
+  .opt:has(input:checked) { border-color: var(--blue); background: #f3f7fd; }
+  .otp { display: flex; gap: 10px; margin-top: 16px; }
+  .otp input { width: 48px; height: 52px; text-align: center; font-size: 20px; border: 1px solid #c6cdd9; border-radius: 6px; outline: 0; }
+  .otp input:focus { border-color: var(--blue); }
+  .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); margin-top: 12px; }
+  .box { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; background: #f9fbfd; font-size: 14px; margin-top: 16px; }
+  .box h4 { margin: 0 0 8px; font-size: 13px; color: var(--navy); display: flex; justify-content: space-between; }
+  .box dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 10px; margin: 0; } .box dt { color: var(--muted); } .box dd { margin: 0; }
+  .ok { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ok); background: #e6f4ea; padding: 3px 10px; border-radius: 20px; }
+  .drop { display: block; margin-top: 16px; border: 1.5px dashed #b6c1d2; border-radius: 8px; padding: 22px; text-align: center; color: var(--ink-2); cursor: pointer; background: #fafcff; font-size: 14px; }
+  .drop img { max-width: 100%; max-height: 180px; display: block; margin: 0 auto 8px; border-radius: 6px; }
+  .drop input { display: none; }
+  .stabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 4px; overflow-x: auto; scrollbar-width: none; }
+  .stabs button { border: 0; background: none; padding: 10px 12px; font: 500 14px Roboto, sans-serif; color: var(--muted); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+  .stabs button.on { color: var(--blue); border-color: var(--blue); }
+  .stabs button.done { color: var(--ok); }
+  .modal { position: fixed; inset: 0; background: rgba(10,31,68,.5); display: grid; place-items: center; padding: 16px; z-index: 30; }
+  .sheet { background: #fff; border-radius: 10px; max-width: 520px; width: 100%; max-height: 86vh; display: flex; flex-direction: column; }
+  .sheet .hd { padding: 16px 20px; font-weight: 700; color: var(--navy); border-bottom: 1px solid var(--line); }
+  .sheet .bd { padding: 16px 20px; overflow: auto; font-size: 13px; color: var(--ink-2); }
+  .sheet .ft { padding: 12px 20px 18px; border-top: 1px solid var(--line); }
+  .toast { position: fixed; right: 16px; top: 76px; background: #1d2433; color: #fff; font-size: 13.5px; padding: 12px 16px; border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 40; max-width: 320px; }
+  .toast b { color: var(--gold); letter-spacing: .12em; }
+  .demo { position: fixed; left: 16px; bottom: 16px; z-index: 20; }
+  .demo button { background: #fff8e6; border: 1px solid #f0d28a; color: #8a6200; border-radius: 20px; padding: 6px 14px; font: 500 12.5px Roboto, sans-serif; cursor: pointer; }
+  .demo .p { position: absolute; bottom: 40px; left: 0; width: 340px; max-width: calc(100vw - 32px); background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 14px; font-size: 12.5px; }
+  .demo table { width: 100%; border-collapse: collapse; } .demo td { padding: 4px; border-top: 1px solid #f0f0f0; vertical-align: top; }
+  .spinner { width: 44px; height: 44px; border: 3px solid #e3ebf7; border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; margin: 10px auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .acct { text-align: center; background: #f3f7fd; border-radius: 8px; padding: 18px; margin-top: 16px; }
+  .acct b { display: block; font-size: 24px; letter-spacing: .08em; color: var(--navy); }
+  footer { text-align: center; font-size: 12px; color: var(--muted); padding: 0 16px 32px; }
+</style>
+</head>
+<body>
+<header><div class="hbar"><span class="logo"><i></i>MERIDIAN BANK</span><small>🔒 Secure application</small></div></header>
+<div class="page">
+  <section class="banner">
+    <h1 id="bh">Open a Savings Account instantly</h1>
+    <p id="bp">Get your account number in minutes. Complete Video KYC later to unlock full banking.</p>
+    <ul><li>Account number and virtual debit card instantly</li><li>Only your Aadhaar-linked mobile and PAN needed</li><li>Zero paperwork, no branch visit</li><li>Complete Video KYC within 12 months</li></ul>
+    <div class="coin"></div>
+  </section>
+  <section class="panel" id="app"></section>
+</div>
+<footer>Meridian Bank is fictional. This KYC flow follows HDFC Bank's InstaAccount online journey for the TrueID Shield demo. It is not affiliated with HDFC Bank.</footer>
+<div class="demo" id="demo" hidden></div>
+
+<script src="kyc-common.js"></script>
+<script>
+const S = { form: { gender: "" }, checks: {}, otp: null, mode: "pan", kycVia: null, selfie: null, card: null, ovd: {}, appId: null, attempts: 3 };
+const tel = new KYC.Telemetry();
+tel.attach(document);
+const $ = (s, r = document) => r.querySelector(s);
+const app = $("#app");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const CRUMB = 6;
+const crumb = (n) => `<div class="crumb">${Array.from({ length: CRUMB }, (_, i) => `<span class="${i <= n ? "on" : ""}"></span>`).join("")}</div>`;
+function toast(html, ms = 9000) { const t = document.createElement("div"); t.className = "toast"; t.innerHTML = html; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
+function sendOtp(to) { S.otp = KYC.otp(); toast(`Demo SMS to ${esc(to)}<br><b>${S.otp}</b> is your OTP for Meridian Bank account opening. Do not share it with anyone.`); }
+function otpBoxes(id) { return `<div class="otp" id="${id}">${Array.from({ length: 6 }, (_, i) => `<input name="${id}${i}" inputmode="numeric" maxlength="1" aria-label="OTP digit ${i + 1}">`).join("")}</div>`; }
+function wireOtp(id) {
+  const boxes = [...document.querySelectorAll(`#${id} input`)];
+  boxes.forEach((b, i) => {
+    b.addEventListener("input", () => { b.value = b.value.replace(/\D/g, "").slice(-1); if (b.value && boxes[i + 1]) boxes[i + 1].focus(); });
+    b.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !b.value && boxes[i - 1]) boxes[i - 1].focus(); });
+    b.addEventListener("paste", (e) => { const v = (e.clipboardData.getData("text") || "").replace(/\D/g, "").slice(0, 6); if (v.length === 6) { e.preventDefault(); boxes.forEach((x, k) => (x.value = v[k])); } });
+  });
+  boxes[0]?.focus();
+  return () => boxes.map((b) => b.value).join("");
+}
+function timer(el, secs, onEnd) {
+  let s = secs; const tick = () => { el.textContent = `Resend OTP in 00:${String(s).padStart(2, "0")}`; if (s-- <= 0) { clearInterval(h); onEnd(); } };
+  const h = setInterval(tick, 1000); tick(); return () => clearInterval(h);
+}
+
+// ---------- 1. Let's Get Started ----------
+function stepLogin() {
+  const f = S.form;
+  app.innerHTML = `${crumb(0)}<h2>Let's Get Started</h2><p class="sub">🛡️ Your personal or banking data is never shared.</p>
+    <div class="fld"><label for="phone">Aadhaar Linked Mobile Number</label><span class="pre">+91</span><input id="phone" name="phone" inputmode="numeric" maxlength="10" value="${esc(f.phone)}"></div>
+    <div class="tabs"><button id="tp" class="${S.mode === "pan" ? "on" : ""}">PAN Card</button><button id="td" class="${S.mode === "dob" ? "on" : ""}">Date of Birth</button></div>
+    <div id="idf"></div>
+    <label class="chk"><input type="checkbox" id="consent"> <span>I agree to the <button class="link" id="tnc">terms and conditions</button> and provide my consent to Meridian Bank to fetch my details for account opening.</span></label>
+    <div class="err" id="err"></div><button class="btn" id="go">Get OTP</button>`;
+  const idf = () => {
+    $("#idf").innerHTML = S.mode === "pan"
+      ? `<div class="fld"><label for="pan">PAN</label><input id="pan" name="pan" maxlength="10" style="text-transform:uppercase" value="${esc(f.pan)}"></div><p class="note" style="margin:6px 0 0"><button class="link" id="nopan">I don't have a PAN</button></p>`
+      : `<div class="fld"><label for="dob">Date of Birth</label><input id="dob" name="dob" type="date" value="${esc(S.dobIso)}"></div>`;
+    $("#nopan") && ($("#nopan").onclick = () => { S.mode = "dob"; stepLogin(); });
+  };
+  idf();
+  $("#tp").onclick = () => { S.mode = "pan"; stepLogin(); };
+  $("#td").onclick = () => { S.mode = "dob"; stepLogin(); };
+  $("#tnc").onclick = consentPopup;
+  $("#go").onclick = async () => {
+    const phone = $("#phone").value.trim(); const err = $("#err");
+    if (!/^[6-9]\d{9}$/.test(phone)) return (err.textContent = "Please enter a valid 10-digit mobile number.");
+    if (S.mode === "pan") {
+      const pan = $("#pan").value.toUpperCase().trim();
+      if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) return (err.textContent = "Please enter a valid PAN.");
+      f.pan = pan;
+    } else {
+      if (!$("#dob").value) return (err.textContent = "Please enter your date of birth.");
+      S.dobIso = $("#dob").value; f.dob = KYC.toDmy(S.dobIso); f.pan = "";
+    }
+    if (!$("#consent").checked) return consentPopup();
+    f.phone = phone; S.attempts = 3; sendOtp("+91 " + phone); stepOtp();
+  };
+}
+function consentPopup() {
+  const m = document.createElement("div"); m.className = "modal";
+  m.innerHTML = `<div class="sheet"><div class="hd">NOTICE AND REQUEST FOR CONSENT</div><div class="bd">
+    <p>Meridian Bank will process your personal data (name, mobile number, PAN, date of birth, Aadhaar details, photograph and address) for:</p>
+    <p>• Verifying your identity and opening your account<br>• Compliance with legal and regulatory requirements (RBI KYC Master Direction, PMLA)<br>• Fraud detection and prevention, including sharing with fraud-prevention service providers<br>• Customer support</p>
+    <p>Your data may be shared with regulators, the Central KYC Registry (CERSAI), UIDAI, and our technology partners for these purposes. You may withdraw consent at any time; this may affect our ability to provide the account.</p></div>
+    <div class="ft"><button class="btn" style="margin:0" id="ok">I Agree and Continue</button></div></div>`;
+  document.body.appendChild(m);
+  $("#ok", m).onclick = () => { m.remove(); const c = $("#consent"); if (c) c.checked = true; };
+}
+
+// ---------- 2. OTP ----------
+function stepOtp() {
+  app.innerHTML = `${crumb(0)}<h2>Help us confirm this is you!</h2><p class="sub">Enter the OTP sent to +91 ${esc(S.form.phone.replace(/^(\d{2})\d{4}/, "$1XXXX"))} &nbsp;<button class="link" id="edit">Edit mobile number</button></p>
+    ${otpBoxes("otp")}<div class="meta"><span id="tm"></span><span id="att">${S.attempts} attempts left</span></div>
+    <div class="err" id="err"></div><button class="btn" id="go">Submit</button>`;
+  const val = wireOtp("otp");
+  const tm = $("#tm");
+  const stop = timer(tm, 30, () => { tm.innerHTML = `<button class="link" id="rs">Resend OTP</button>`; $("#rs").onclick = () => { sendOtp("+91 " + S.form.phone); stepOtp(); }; });
+  $("#edit").onclick = () => { stop(); stepLogin(); };
+  $("#go").onclick = async () => {
+    if (val() !== S.otp) {
+      S.attempts--; $("#att").textContent = `${S.attempts} attempts left`;
+      if (S.attempts <= 0) { stop(); app.innerHTML = `<h2>Maximum OTP Attempts</h2><p class="sub">You've reached the maximum number of attempts. Please try again after some time.</p><button class="btn" onclick="location.reload()">Start again</button>`; return; }
+      return ($("#err").textContent = "Incorrect OTP. Please try again.");
+    }
+    stop(); S.checks.mobile_otp = true;
+    if (S.form.pan) {
+      const r = await KYC.api("/api/verify/pan", { pan: S.form.pan });
+      if (!r.ok) return ($("#err").textContent = r.error);
+      S.panName = r.name; S.form.dob ||= r.dob; S.checks.pan_nsdl = true;
+    }
+    stepKyc();
+  };
+}
+
+// ---------- 3. KYC method ----------
+function stepKyc() {
+  $("#bh").textContent = "Verify your identity"; $("#bp").textContent = "Choose how you'd like to complete your KYC. Aadhaar OTP is the fastest.";
+  app.innerHTML = `${crumb(1)}<h2>KYC</h2><p class="sub">Identify using</p>
+    <label class="opt"><input type="radio" name="via" value="ckyc"><b>Central KYC (CKYC)</b><span>OTP-based verification from Central KYC Registry (CERSAI) followed by video KYC later</span></label>
+    <label class="opt"><input type="radio" name="via" value="aadhaar" checked><b>Aadhaar</b><span>OTP-based e-KYC with UIDAI followed by video KYC later</span></label>
+    <label class="opt"><input type="radio" name="via" value="ovd"><b>Other Valid Documents</b><span>Upload relevant verification document(s) and visit your nearest branch</span></label>
+    <div class="err" id="err"></div><button class="btn" id="go">Continue</button>`;
+  $("#go").onclick = () => {
+    S.kycVia = $("input[name=via]:checked")?.value;
+    if (!S.kycVia) return ($("#err").textContent = "Please make a selection.");
+    S.kycVia === "ovd" ? stepOvd() : stepEkyc();
+  };
+}
+function stepEkyc() {
+  const ck = S.kycVia === "ckyc";
+  app.innerHTML = `${crumb(1)}<h2>${ck ? "Central KYC (CKYC)" : "Aadhaar e-KYC"}</h2><p class="sub">${ck ? "We'll fetch your KYC record from CERSAI. Enter your Aadhaar number to find it." : "Your details will be fetched from UIDAI."}</p>
+    <div class="fld"><label for="aad">Aadhaar Number / VID</label><input id="aad" name="aadhaar" inputmode="numeric" maxlength="14" value="${esc(S.form.id_number)}"></div>
+    <label class="chk"><input type="checkbox" id="ac"> <span>I agree and provide my consent to the Terms and Conditions for ${ck ? "fetching my CKYC record" : "Aadhaar based e-KYC authentication"}.</span></label>
+    <div id="o"></div><div class="err" id="err"></div><button class="btn" id="go">Get OTP</button><p class="note" style="text-align:center"><button class="link" id="back">Back</button></p>`;
+  $("#back").onclick = stepKyc;
+  $("#go").onclick = async () => {
+    const id = $("#aad").value.replace(/\s/g, "");
+    if (!$("#ac").checked) return ($("#err").textContent = "Please provide your consent to continue.");
+    const r = await KYC.api("/api/verify/aadhaar", { id_number: id });
+    if (!r.ok) return ($("#err").textContent = r.error);
+    sendOtp(ck ? "your CKYC-registered mobile" : "your Aadhaar-linked mobile");
+    $("#o").innerHTML = `<p class="note" style="margin:16px 0 0">Enter the 6-digit OTP</p>${otpBoxes("ao")}`;
+    const val = wireOtp("ao");
+    $("#go").textContent = "Verify";
+    $("#go").onclick = () => {
+      if (val() !== S.otp) return ($("#err").textContent = "Incorrect OTP. Please try again.");
+      Object.assign(S.form, { id_number: id, name: r.name, dob: r.dob, gender: r.gender, address: r.address || "" });
+      S.ekyc = r; S.checks[ck ? "ckyc_otp" : "aadhaar_ekyc_otp"] = true;
+      stepSelfie();
+    };
+  };
+}
+function stepOvd() {
+  const o = S.ovd;
+  app.innerHTML = `${crumb(1)}<h2>Other Valid Documents</h2><p class="sub">Upload a document. You'll need to visit your nearest branch to complete KYC.</p>
+    <div class="fld"><label for="dt">Select Document Type</label><select id="dt"><option value="">Select</option>${["Passport", "Driving Licence", "Voter ID"].map((d) => `<option ${o.type === d ? "selected" : ""}>${d}</option>`).join("")}</select></div>
+    <div class="fld"><label for="dn">Document Number</label><input id="dn" name="doc_number" value="${esc(o.number)}"></div>
+    <div class="fld"><label for="nm">Full Name as per Officially Valid Document (OVD)</label><input id="nm" name="name" value="${esc(S.form.name)}"></div>
+    <div class="two"><div class="fld"><label for="db">Date of Birth</label><input id="db" name="dob" type="date" value="${esc(S.dobIso)}"></div>
+    <div class="fld"><label for="g">Gender</label><select id="g"><option value="">Select</option><option value="F" ${S.form.gender === "F" ? "selected" : ""}>Female</option><option value="M" ${S.form.gender === "M" ? "selected" : ""}>Male</option><option value="T" ${S.form.gender === "T" ? "selected" : ""}>Transgender</option></select></div></div>
+    <label class="drop" id="fr">${o.front ? `<img src="${o.front}">Replace front` : "📄 Upload Front"}<input type="file" id="ff" accept="image/*"></label>
+    <label class="drop">${o.back ? `<img src="${o.back}">Replace back` : "📄 Upload Back"}<input type="file" id="fb" accept="image/*"></label>
+    <div class="err" id="err"></div><button class="btn" id="go">Continue</button><p class="note" style="text-align:center"><button class="link" id="back">Back</button></p>`;
+  const keep = () => {
+    o.type = $("#dt").value; o.number = $("#dn").value.trim();
+    S.form.name = $("#nm").value.trim(); S.form.gender = $("#g").value;
+    if ($("#db").value) S.dobIso = $("#db").value;
+  };
+  $("#ff").onchange = async (e) => { keep(); if (e.target.files[0]) o.front = await KYC.toJpeg(e.target.files[0], 1600, .9); stepOvd(); };
+  $("#fb").onchange = async (e) => { keep(); if (e.target.files[0]) o.back = await KYC.toJpeg(e.target.files[0], 1600, .9); stepOvd(); };
+  $("#back").onclick = stepKyc;
+  $("#go").onclick = () => {
+    keep();
+    if (!o.type || !o.number || !S.form.name || !S.form.gender || !S.dobIso) return ($("#err").textContent = "Please fill in all the details.");
+    if (!o.front) return ($("#err").textContent = "Please upload the front of your document.");
+    Object.assign(S.form, { id_number: o.number.replace(/\s/g, ""), dob: KYC.toDmy(S.dobIso) });
+    S.card = o.front; S.checks.ovd_upload = true;
+    stepSelfie();
+  };
+}
+
+// ---------- 4. Selfie (upload, no liveness) ----------
+function stepSelfie() {
+  $("#bh").textContent = "Almost there"; $("#bp").textContent = "Add a recent photograph for your account records.";
+  app.innerHTML = `${crumb(2)}<h2>Upload Selfie</h2><p class="sub">A clear, recent photo of your face. Make sure your face is fully visible.</p>
+    <label class="drop">${S.selfie ? `<img src="${S.selfie}">Tap to change` : "🤳 Take or upload a photo"}<input type="file" id="sf" accept="image/*"></label>
+    <p class="note">JPG or PNG. Avoid caps, sunglasses and masks.</p>
+    <div class="err" id="err"></div><button class="btn" id="go">Continue</button>`;
+  $("#sf").onchange = async (e) => { if (e.target.files[0]) { S.selfie = await KYC.toJpeg(e.target.files[0], 1280); stepSelfie(); } };
+  $("#go").onclick = () => { if (!S.selfie) return ($("#err").textContent = "Please upload your selfie."); S.checks.selfie_upload = true; stepDetails(0); };
+}
+
+// ---------- 5. Your Details ----------
+const DTABS = ["Personal", "Address", "Financial", "Family"];
+function stepDetails(t) {
+  const f = S.form;
+  const sel = (id, arr, v) => `<select id="${id}" name="${id}"><option value="">Select</option>${arr.map((o) => `<option ${o === v ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+  const body = [
+    () => `<div class="fld"><label for="nm">Full Name as per PAN Card</label><input id="nm" name="name" value="${esc(f.name || S.panName)}"></div>
+      <div class="two"><div class="fld"><label>Date of Birth per PAN Card</label><input readonly value="${esc(f.dob)}"></div>
+      <div class="fld"><label for="g">Gender</label><select id="g"><option value="F" ${f.gender === "F" ? "selected" : ""}>Female</option><option value="M" ${f.gender === "M" ? "selected" : ""}>Male</option><option value="T" ${f.gender === "T" ? "selected" : ""}>Transgender</option></select></div></div>
+      <label class="chk"><input type="checkbox" id="dd" ${S.dobDeclared ? "checked" : ""}> I declare that above date of birth is correct</label>
+      <div class="fld"><label for="em">Email ID</label><input id="em" name="email" type="email" value="${esc(f.email)}" ${S.checks.email_otp ? "readonly" : ""}>${S.checks.email_otp ? "" : `<button class="act" id="ve">Verify</button>`}</div>
+      <div id="eo"></div>${S.checks.email_otp ? `<p class="ok" style="margin-top:8px">✓ Email verified</p>` : `<p class="note" style="margin:6px 0 0">Verification is optional. <button class="link" id="skip">Skip</button></p>`}
+      <p style="margin:18px 0 0;font-weight:500;color:var(--navy);font-size:14px">Other Information</p>
+      <label class="chk"><input type="checkbox" id="nat" ${f.nat ? "checked" : ""}> I am an Indian National</label>
+      <label class="chk"><input type="checkbox" id="tax" ${f.tax ? "checked" : ""}> I am a Tax Resident of India</label>
+      <label class="chk"><input type="checkbox" id="ib" ${f.ib !== false ? "checked" : ""}> I want Internet Banking Facility</label>`,
+    () => `<div class="box"><h4>Your Address as per ${S.kycVia === "ovd" ? "document" : "Aadhaar"} is</h4>${esc(f.address || "—")}</div>
+      ${S.kycVia === "ovd" ? `<div class="fld"><label for="pa">Permanent Address</label><input id="pa" name="address" value="${esc(f.address)}"></div>` : ""}
+      <p style="margin:18px 0 0;font-weight:500;color:var(--navy);font-size:14px">Communication Address</p>
+      <label class="opt"><input type="radio" name="ca" value="same" ${f.comm !== "new" ? "checked" : ""}><b>Same as Above</b></label>
+      <label class="opt"><input type="radio" name="ca" value="new" ${f.comm === "new" ? "checked" : ""}><b>Add New</b></label>
+      <div id="na" ${f.comm === "new" ? "" : "hidden"}><div class="fld"><label for="a1">Address Line 1</label><input id="a1" value="${esc(f.a1)}"></div><div class="fld"><label for="a2">Address Line 2</label><input id="a2" value="${esc(f.a2)}"></div>
+        <div class="two"><div class="fld"><label for="lm">Landmark</label><input id="lm" value="${esc(f.lm)}"></div><div class="fld"><label for="pin">PIN</label><input id="pin" inputmode="numeric" maxlength="6" value="${esc(f.pin)}"></div></div>
+        <div class="two"><div class="fld"><label for="ct">City</label><input id="ct" value="${esc(f.city)}"></div><div class="fld"><label for="stt">State</label><input id="stt" value="${esc(f.state)}"></div></div></div>`,
+    () => `<p class="sub" style="margin:12px 0 0">Information about your financial profile</p>
+      <div class="fld"><label for="et">Employment Type</label>${sel("et", ["Salaried", "Self Employed Professional", "Self Employed Business", "Student", "Homemaker", "Retired", "Agriculturist", "Others"], f.et)}</div>
+      <div class="fld"><label for="ot">Type of your Organization</label>${sel("ot", ["Private Ltd", "Public Ltd", "Government", "PSU", "MNC", "Partnership", "Proprietorship", "Not Applicable"], f.ot)}</div>
+      <div class="fld"><label for="inc">Gross Annual Income</label>${sel("inc", ["Up to 2.5 Lakhs", "2.5 - 5 Lakhs", "5 - 10 Lakhs", "10 - 25 Lakhs", "Above 25 Lakhs"], f.inc)}</div>
+      <div class="fld"><label for="src">Source of Funds</label>${sel("src", ["Salary", "Business Income", "Agriculture", "Investment Income", "Pension", "Others"], f.src)}</div>`,
+    () => `<div class="fld"><label for="fa">Father's Name</label><input id="fa" name="father" value="${esc(f.father)}"></div>
+      <div class="fld"><label for="mo">Mother's Name</label><input id="mo" name="mother" value="${esc(f.mother)}"></div>
+      <div class="fld"><label for="ms">Marital Status</label>${sel("ms", ["Single", "Married", "Divorced", "Widowed"], f.ms)}</div>
+      <div class="fld" id="spw" ${f.ms === "Married" ? "" : "hidden"}><label for="sp">Spouse Name</label><input id="sp" value="${esc(f.spouse)}"></div>`,
+  ][t];
+  app.innerHTML = `${crumb(3)}<h2>Your Details</h2><div class="stabs">${DTABS.map((n, i) => `<button data-t="${i}" class="${i === t ? "on" : i < t ? "done" : ""}">${i < t ? "✓ " : ""}${n}</button>`).join("")}</div>
+    ${body()}<div class="err" id="err"></div><button class="btn" id="go">${t < 3 ? "Next" : "Continue"}</button>`;
+  document.querySelectorAll(".stabs button").forEach((b) => (b.onclick = () => { if (+b.dataset.t < t) stepDetails(+b.dataset.t); }));
+  const v = (id) => ($("#" + id)?.value || "").trim();
+  const err = (m) => ($("#err").textContent = m);
+
+  if (t === 0) {
+    $("#ve") && ($("#ve").onclick = () => {
+      const em = v("em"); if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return err("Enter a valid email ID.");
+      f.email = em; S.otp = KYC.otp(); toast(`Demo email to ${esc(em)}<br>Your OTP is <b>${S.otp}</b>`);
+      $("#eo").innerHTML = `<p class="note" style="margin:12px 0 0">Enter OTP to verify personal email ID</p>${otpBoxes("eot")}<button class="btn ghost" id="eok" style="height:42px">Confirm OTP</button>`;
+      const val = wireOtp("eot");
+      $("#eok").onclick = () => { if (val() !== S.otp) return err("Incorrect OTP."); S.checks.email_otp = true; f.name = v("nm"); f.gender = v("g"); stepDetails(0); };
+    });
+    $("#skip") && ($("#skip").onclick = () => toast("You can verify your email later from NetBanking.", 4000));
+  }
+  if (t === 1) document.querySelectorAll("input[name=ca]").forEach((r) => (r.onchange = () => ($("#na").hidden = r.value !== "new")));
+  if (t === 3) $("#ms").onchange = () => ($("#spw").hidden = $("#ms").value !== "Married");
+
+  $("#go").onclick = () => {
+    if (t === 0) {
+      if (!v("nm")) return err("Please enter your full name.");
+      const em = v("em"); if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return err("Please enter a valid email ID.");
+      if (!$("#dd").checked) return err("Please confirm your date of birth.");
+      if (!$("#nat").checked || !$("#tax").checked) return err("Only Indian nationals who are tax residents of India can open this account online.");
+      Object.assign(f, { name: v("nm"), gender: v("g"), email: em, nat: true, tax: true, ib: $("#ib").checked }); S.dobDeclared = true;
+    }
+    if (t === 1) {
+      if (S.kycVia === "ovd") { if (!v("pa")) return err("Please enter your permanent address."); f.address = v("pa"); }
+      f.comm = $("input[name=ca]:checked").value;
+      if (f.comm === "new") {
+        Object.assign(f, { a1: v("a1"), a2: v("a2"), lm: v("lm"), pin: v("pin"), city: v("ct"), state: v("stt") });
+        if (!f.a1 || !/^\d{6}$/.test(f.pin) || !f.city || !f.state) return err("Please complete your communication address.");
+      }
+    }
+    if (t === 2) { Object.assign(f, { et: v("et"), ot: v("ot"), inc: v("inc"), src: v("src") }); if (!f.et || !f.ot || !f.inc || !f.src) return err("Please fill in all the details."); }
+    if (t === 3) {
+      Object.assign(f, { father: v("fa"), mother: v("mo"), ms: v("ms"), spouse: v("sp") });
+      if (!f.father || !f.mother || !f.ms) return err("Please fill in all the details.");
+      if (f.ms === "Married" && !f.spouse) return err("Please enter your spouse's name.");
+    }
+    t < 3 ? stepDetails(t + 1) : stepReview();
+  };
+}
+
+// ---------- 6. Review ----------
+function stepReview() {
+  const f = S.form;
+  const sec = (h, rows, t) => `<div class="box"><h4>${h}${t != null ? `<button class="link" data-e="${t}">Edit</button>` : ""}</h4><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v || "—")}</dd>`).join("")}</dl></div>`;
+  app.innerHTML = `${crumb(4)}<h2>Review your details</h2><p class="sub">Please check everything before you continue.</p>
+    ${sec("Personal Details", [["Full Name", f.name], ["Date of Birth", f.dob], ["Gender", { F: "Female", M: "Male", T: "Transgender" }[f.gender]], ["PAN", f.pan || "Not provided"],
+      [S.kycVia === "ovd" ? S.ovd.type : "Aadhaar", S.kycVia === "ovd" ? f.id_number : "XXXX XXXX " + f.id_number.slice(-4)]], 0)}
+    ${sec("Contact Details", [["Mobile", "+91 " + f.phone], ["Email", f.email + (S.checks.email_otp ? " ✓" : " (not verified)")], ["Address", f.address],
+      ["Communication", f.comm === "new" ? [f.a1, f.a2, f.city, f.state, f.pin].filter(Boolean).join(", ") : "Same as above"]], 1)}
+    ${sec("Financial Details", [["Employment", f.et], ["Organization", f.ot], ["Annual Income", f.inc], ["Source of Funds", f.src]], 2)}
+    ${sec("Family Details", [["Father", f.father], ["Mother", f.mother], ["Marital Status", f.ms]], 3)}
+    <div class="box"><h4>Uploaded Selfie</h4><img src="${S.selfie}" style="width:84px;height:84px;object-fit:cover;border-radius:6px"></div>
+    <div class="fld"><label for="promo">Promo Code (Optional)</label><input id="promo"></div>
+    <label class="chk"><input type="checkbox" id="tc"> I agree and provide my consent to the Terms and Conditions, and confirm that the information provided is true.</label>
+    <div class="err" id="err"></div><button class="btn" id="go">Confirm &amp; Continue</button>`;
+  document.querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => stepDetails(+b.dataset.e)));
+  $("#go").onclick = () => { if (!$("#tc").checked) return ($("#err").textContent = "Please accept the Terms and Conditions."); stepVkycConsent(); };
+}
+
+// ---------- 7. Video KYC consent + submit ----------
+function stepVkycConsent() {
+  app.innerHTML = `${crumb(5)}<h2>Video KYC consent</h2><p class="sub">Your account will be opened with limited KYC now.</p>
+    <div class="box" style="background:#fffaf0;border-color:#f3dfb0">To unlock full banking (no balance and credit limits), complete a short Video KYC call with a Meridian Bank official within 12 months. Keep your original PAN card and a blank paper and pen ready.</div>
+    <label class="chk"><input type="checkbox" id="vc" checked> I consent to Meridian Bank recording the Video KYC call and storing my photograph and location for verification.</label>
+    <div class="err" id="err"></div><button class="btn" id="go">I Agree to Continue</button><button class="btn ghost" id="no" style="margin-top:10px">I don't want to Continue</button>`;
+  $("#no").onclick = () => { app.innerHTML = `<h2>Application not submitted</h2><p class="sub">You can come back and complete your application at any time.</p><button class="btn" onclick="location.reload()">Start again</button>`; };
+  $("#go").onclick = async () => {
+    S.checks.vkyc_consent = $("#vc").checked;
+    $("#go").disabled = true; $("#go").textContent = "Submitting…";
+    try { await submit(); } catch (e) { $("#err").textContent = "Couldn't submit: " + e.message; $("#go").disabled = false; $("#go").textContent = "I Agree to Continue"; }
+  };
+}
+
+/** What Aadhaar / CKYC e-KYC hands the bank is data, not a card photo. TrueID's partner API takes a card image, so we send
+ * a rendering of the e-KYC record. (Real e-KYC XML also carries the UIDAI photo; this replica doesn't have one.) */
+function ekycRecordImage() {
+  const c = document.createElement("canvas"); c.width = 1000; c.height = 630; const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, 1000, 630); g.fillStyle = "#0a1f44"; g.fillRect(0, 0, 1000, 90);
+  g.fillStyle = "#fff"; g.font = "bold 34px Arial"; g.fillText(S.kycVia === "ckyc" ? "CKYC RECORD (CERSAI)" : "e-KYC RECORD (UIDAI)", 40, 58);
+  g.fillStyle = "#1d2433"; g.font = "30px Arial";
+  const f = S.form;
+  [["Name", f.name], ["DOB", f.dob], ["Gender", f.gender], ["Aadhaar", "XXXX XXXX " + f.id_number.slice(-4)], ["Address", (f.address || "").slice(0, 46)]]
+    .forEach(([k, v], i) => { g.fillStyle = "#8a93a6"; g.fillText(k, 40, 170 + i * 80); g.fillStyle = "#1d2433"; g.fillText(v || "", 230, 170 + i * 80); });
+  return c.toDataURL("image/jpeg", .9);
+}
+
+async function submit() {
+  const f = S.form;
+  if (S.kycVia !== "ovd") S.card = ekycRecordImage();
+  const payload = {
+    reference: "MB" + Date.now().toString(36).toUpperCase(),
+    form: { name: f.name, dob: f.dob, gender: f.gender, id_number: f.id_number, phone: f.phone, email: f.email, pan: f.pan || "", address: f.address,
+      pincode: ((f.address || "").match(/\b\d{6}\b/) || [""])[0] },
+    device: { device_id: await KYC.deviceId("Meridian~"), user_agent: navigator.userAgent, camera_labels: [], active_camera: "" },
+    telemetry: tel.snapshot(),
+    liveness: { performed: false, passed: false, challenges: [], virtual_camera: false },
+    capture: { card: S.kycVia === "ovd" ? "ovd_upload_" + S.ovd.type.toLowerCase().replace(/\s/g, "_") : S.kycVia + "_record", selfie: "gallery_upload" },
+    partner_checks: S.checks,
+  };
+  const r = await fetch("/api/kyc/submit", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ payload, card: S.card, selfie: S.selfie, frames: [] }) }).then((x) => x.json());
+  if (!r.application_id) throw new Error(r.detail || "unknown error");
+  S.appId = r.application_id; done();
+}
+
+function done() {
+  $("#bh").textContent = "Thank you!"; $("#bp").textContent = "We're setting up your account.";
+  app.innerHTML = `${crumb(5)}<div id="st" style="text-align:center"><div class="spinner"></div><h2>Opening your account</h2><p class="sub" style="justify-content:center">Please don't close this window.</p></div>`;
+  const poll = async () => {
+    const r = await fetch(`/api/kyc/status/${S.appId}`).then((x) => x.json()).catch(() => ({}));
+    if (r.status !== "completed") return setTimeout(poll, 1500);
+    if (r.outcome === "declined") {
+      app.innerHTML = `<h2>We couldn't open your account</h2><p class="sub">We were unable to verify your details online. Please visit your nearest Meridian Bank branch with your original KYC documents.</p><p class="note">Reference: ${esc(S.appId)}</p><button class="btn ghost" onclick="location.reload()">Close</button>`;
+      return;
+    }
+    const acct = "5010" + String(parseInt(S.appId.replace(/\D/g, "").slice(0, 8) || "0", 10) + 10000000).slice(-8);
+    const vkyc = S.kycVia === "ovd" ? "Visit your nearest branch with your original document to complete KYC." : "Complete Video KYC within 12 months to remove limits on your account.";
+    app.innerHTML = `${crumb(5)}<h2>${r.outcome === "approved" ? "Your account is ready" : "Your account is opened with limited access"}</h2>
+      <p class="sub">${r.outcome === "approved" ? "Welcome to Meridian Bank." : "Some of your details are being verified. Your account will have limits until then."}</p>
+      <div class="acct">Savings Account Number<b>${acct}</b><span class="note">Customer ID will be sent to +91 XXXXXX${esc(S.form.phone.slice(-4))}</span></div>
+      <div class="box">${vkyc}</div>
+      ${S.kycVia === "ovd" ? "" : `<button class="btn" id="vk">Start Video KYC</button><button class="btn ghost" style="margin-top:10px" onclick="location.reload()">Skip to Video KYC later</button>`}`;
+    $("#vk") && ($("#vk").onclick = () => toast("Video KYC agents aren't part of this replica. In production this opens the V-CIP call.", 5000));
+  };
+  poll();
+}
+
+// ---------- demo-mode test data ----------
+(async () => {
+  const ids = await fetch("/api/demo-identities").then((r) => r.json()).catch(() => []);
+  if (!ids.length) return;
+  const d = $("#demo"); d.hidden = false;
+  d.innerHTML = `<button id="dbtn">Demo mode · Test data</button><div class="p" id="dp" hidden><b>Test identities</b> (demo mode only)
+    <table>${ids.map((i) => `<tr><td>${esc(i.name)}<br><span style="color:#999">DOB ${esc(i.dob)}</span></td><td>PAN ${esc(i.pan)}<br>Aadhaar ${esc(i.id_number)}</td></tr>`).join("")}</table>
+    <p style="color:#999;margin:8px 0 0">OTPs appear on screen. The name field is editable here, which is a real gap: try a different name and check the ops console.</p></div>`;
+  $("#dbtn").onclick = () => ($("#dp").hidden = !$("#dp").hidden);
+})();
+
+stepLogin();
+</script>
+</body>
+</html>
