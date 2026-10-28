@@ -3,12 +3,14 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { ArrowRight, Bot, Check, Brain, CheckCircle2, CircleDashed, FileSearch, Fingerprint, GitMerge, Network, Scale, ScanFace, ShieldQuestion, Sparkles, Database } from "lucide-react";
-import { BandBadge, Logo, RiskBar, SimBadge, riskColor } from "@/components/ui";
-import { type CaseDetail, STREAM_API, get } from "@/lib/api";
+import { BandBadge, Finding, Logo, readable, RiskBar, SimBadge, riskColor } from "@/components/ui";
+import { ApiError, type CaseDetail, type EvidenceCheck, get } from "@/lib/api";
 import { applicantMessage } from "@/lib/applicantMessage";
 
-type Ev = { node: string; module?: string; risk?: number; reasons?: string[]; rule_codes?: string[]; latency_ms?: number; prob?: number; band?: string;
-  forced?: string | null; fraud_label?: string; fraud_action?: string; step_up?: { voice: number; simulated: boolean }; summary?: string; error?: string };
+type Ev = { node: string; module?: string; risk?: number; reasons?: string[]; reason_texts?: Record<string, string>; rule_codes?: string[]; latency_ms?: number; prob?: number; band?: string;
+  forced?: string | null; fraud_label?: string; fraud_action?: string; step_up?: { voice: number; simulated: boolean }; summary?: string; error?: string;
+  unresolved?: string[]; model_status?: string; approval_eligible?: boolean };
+type Result = { done: boolean; band?: string; reasons?: string[]; evidence?: EvidenceCheck[]; error?: boolean };
 
 const NODES: { id: string; simple: string; label: string; icon: any; sub: string }[] = [
   { id: "ingest", simple: "Application received", label: "Ingest", icon: Database, sub: "consent · uploads · telemetry" },
@@ -17,8 +19,8 @@ const NODES: { id: string; simple: string; label: string; icon: any; sub: string
   { id: "behavior", simple: "Form activity", label: "Behavior agent", icon: Bot, sub: "typing · paste · velocity · rhythm links" },
   { id: "registry", simple: "Official records", label: "Registry agent", icon: Fingerprint, sub: "UIDAI · PAN · telecom · CKYC · bureau" },
   { id: "correlation", simple: "Past applications", label: "Correlation agent", icon: Network, sub: "identity graph · rings · families" },
-  { id: "fusion", simple: "Combining the results", label: "Fusion", icon: GitMerge, sub: "hard rules → calibrated XGBoost → SHAP" },
-  { id: "step_up", simple: "Extra check", label: "Step-up", icon: ShieldQuestion, sub: "voice check (simulated)" },
+  { id: "fusion", simple: "Combining the results", label: "Fusion", icon: GitMerge, sub: "calibrated XGBoost → evidence policy → band" },
+  { id: "step_up", simple: "Extra check", label: "Step-up", icon: ShieldQuestion, sub: "voice check (simulated, shown only)" },
   { id: "decide", simple: "Decision", label: "Decide", icon: Scale, sub: "band · fraud type · action" },
   { id: "explain", simple: "Summary", label: "Explain", icon: Brain, sub: "LLM summary from reason codes only" },
   { id: "persist", simple: "Saved securely", label: "Persist", icon: CheckCircle2, sub: "SQLite + audit log" },
@@ -29,6 +31,7 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
   const [evs, setEvs] = useState<Record<string, Ev>>({});
   const [order, setOrder] = useState<string[]>([]);
   const [done, setDone] = useState(false);
+  const [result, setResult] = useState<Result | null>(null);
   const [t0] = useState(() => performance.now());
   const [elapsed, setElapsed] = useState(0);
   // applicants see plain next steps; presenters/analysts can switch on the full technical view
@@ -37,26 +40,40 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
   const toggleTech = () => setTech((t) => { try { localStorage.setItem("trueid-tech", t ? "0" : "1"); } catch {} return !t; });
 
   useEffect(() => {
-    const es = new EventSource(`${STREAM_API}/api/apply/${id}/events`);
-    es.addEventListener("node", (m) => {
-      const ev: Ev = JSON.parse((m as MessageEvent).data);
-      setEvs((p) => ({ ...p, [ev.node]: { ...p[ev.node], ...ev } }));
-      setOrder((o) => [...o, ev.node]);
-    });
-    es.addEventListener("done", () => { setDone(true); es.close(); });
-    es.onerror = () => {
-      // the live stream only exists while checks run; on refresh or a shared link, rebuild from the saved case
-      es.close();
-      get<CaseDetail>(`/api/apps/${id}`).then((c) => {
-        const restored: Record<string, Ev> = { ingest: { node: "ingest" } };
-        for (const m of c.modules) restored[m.module] = { node: m.module, module: m.module, risk: m.risk, reasons: m.reasons.map((r) => r.code), latency_ms: m.latency_ms };
-        for (const n of ["fusion", "decide", "explain", "persist"]) restored[n] = { node: n };
-        restored.decide = { node: "decide", band: c.band, prob: c.prob, forced: c.forced, rule_codes: c.rule_codes, fraud_label: c.fraud_label, fraud_action: c.action };
-        restored.explain = { node: "explain", summary: c.summary };
-        setEvs(restored); setOrder(["restored from saved case"]); setDone(true);
-      }).catch(() => setEvs((p) => ({ ...p, error: { node: "error", error: "This application could not be found." } })));
+    // progress by polling (works through the same-origin proxy; event streams get buffered)
+    let after = 0, stop = false;
+    const restore = () => get<CaseDetail>(`/api/apps/${id}`).then((c) => {
+      // analysts reopening an older case: rebuild the view from the saved record
+      const restored: Record<string, Ev> = { ingest: { node: "ingest" } };
+      for (const m of c.modules) restored[m.module] = { node: m.module, module: m.module, risk: m.risk, reasons: m.reasons.map((r) => r.code),
+        reason_texts: Object.fromEntries(m.reasons.map((r) => [r.code, r.text])), latency_ms: m.latency_ms };
+      for (const n of ["fusion", "explain", "persist"]) restored[n] = { node: n };
+      restored.decide = { node: "decide", band: c.band, prob: c.prob ?? undefined, forced: c.forced, rule_codes: c.rule_codes, fraud_label: c.fraud_label, fraud_action: c.action };
+      restored.explain = { node: "explain", summary: c.summary };
+      setEvs(restored); setOrder(["restored from saved case"]); setDone(true);
+      setResult({ done: true, band: c.band, reasons: c.modules.flatMap((m) => m.reasons.filter((r) => r.weight > 0).map((r) => r.code)), evidence: c.evidence });
+    }).catch(() => setEvs((p) => ({ ...p, error: { node: "error", error: "This application could not be found in this browser session." } })));
+    const tick = async () => {
+      if (stop) return;
+      try {
+        const r = await get<{ events: Ev[]; next: number; done: boolean }>(`/api/apply/${id}/events?after=${after}`);
+        after = r.next;
+        if (r.events.length) {
+          setEvs((p) => { const n = { ...p }; for (const ev of r.events) n[ev.node] = { ...n[ev.node], ...ev }; return n; });
+          setOrder((o) => [...o, ...r.events.map((e) => e.node)]);
+        }
+        if (r.done) {
+          setResult(await get<Result>(`/api/apply/${id}/result`));
+          setDone(true);
+          return;
+        }
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 401)) return restore();
+      }
+      setTimeout(tick, 600);
     };
-    return () => es.close();
+    tick();
+    return () => { stop = true; };
   }, [id]);
   useEffect(() => {
     if (done) return;
@@ -65,13 +82,15 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
   }, [done, t0]);
 
   const decision = evs.decide ?? evs.fusion;
-  const allCodes = [...Object.values(evs).flatMap((e) => e.reasons ?? []), ...(evs.decide?.rule_codes ?? evs.fusion?.rule_codes ?? [])];
-  const msg = applicantMessage(done ? decision?.band : undefined, allCodes);
+  const allCodes = [...(result?.reasons ?? Object.values(evs).flatMap((e) => e.reasons ?? [])), ...(evs.decide?.rule_codes ?? evs.fusion?.rule_codes ?? []),
+    ...(result?.evidence ?? []).filter((c) => c.status !== "PASS").map((c) => `EV_${c.check.toUpperCase()}_${c.status}`)];
+  const band = result?.band ?? decision?.band;
+  const msg = applicantMessage(done ? band : undefined, allCodes);
   const stepped = !!evs.step_up;
   const parallel = ["document", "biometric", "behavior", "registry"];
   const running = (n: string) => !evs[n] && !done && (
     n === "ingest" ? true : parallel.includes(n) ? !!evs.ingest : n === "correlation" ? parallel.every((p) => evs[p]) :
-    n === "fusion" ? !!evs.correlation : n === "decide" ? !!evs.fusion && !(evs.fusion.band === "REVIEW" && !stepped && !evs.fusion.forced) :
+    n === "fusion" ? !!evs.correlation : n === "decide" ? !!evs.fusion && !(evs.fusion.band === "REVIEW" && !stepped) :
     n === "explain" ? !!evs.decide : n === "persist" ? !!evs.explain : false);
 
   return (
@@ -97,9 +116,9 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
 
         <aside className="space-y-6">
           <section className="panel p-6" aria-live="polite">
-            {done && decision?.band ? (
+            {done && band ? (
               <div>
-                <BandBadge band={decision.band} size="lg" />
+                <BandBadge band={band} size="lg" />
                 <h2 className="mt-4 text-xl font-semibold tracking-tight">{msg.title}</h2>
                 <p className="mt-2 leading-relaxed text-muted">{msg.body}</p>
                 {msg.action && <Link href={msg.action.href} className="btn btn-primary mt-5">{msg.action.label}</Link>}
@@ -117,24 +136,26 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
               <>
                 <div className="mt-3 flex items-center gap-4">
                   <BandBadge band={decision.band} size="lg" />
-                  <div className="text-sm text-muted">Model fraud probability <span className="mono text-fg">{decision.prob?.toFixed(3)}</span></div>
+                  <div className="text-sm text-muted">{decision.prob == null ? "Risk model unavailable: a person decides"
+                    : <>Model fraud probability <span className="mono text-fg">{decision.prob.toFixed(3)}</span></>}</div>
                 </div>
-                <RiskBar value={decision.prob ?? 0} className="mt-4" />
-                {decision.forced && <div className="mt-3 text-xs text-muted">Set by a fixed rule ({decision.forced === "REJECT" ? "reject" : "review"}), not by the model. Rules are deterministic and auditable.</div>}
+                {decision.prob != null && <RiskBar value={decision.prob} className="mt-4" />}
+                {decision.forced === "REJECT" && <div className="mt-3 text-xs text-muted">Set by a fixed evidence rule (the signed card data was contradicted), not by the model.</div>}
+                {!!evs.fusion?.unresolved?.length && <div className="mt-3 text-xs text-muted">Not approvable automatically until these checks pass: <span className="text-fg">{evs.fusion.unresolved.join(", ").replaceAll("_", " ")}</span></div>}
                 {evs.decide?.fraud_label && evs.decide.band !== "APPROVE" && (
                   <div className="mt-5 rounded-lg border border-line bg-bg-2 p-4">
                     <div className="label">Pattern</div><div className="mt-1 font-semibold">{evs.decide.fraud_label}</div>
                     <div className="label mt-3">Recommended action</div><div className="mt-1 text-sm">{evs.decide.fraud_action}</div>
                   </div>
                 )}
-                {stepped && <div className="mt-4 flex items-center gap-2 text-sm text-muted">Step-up voice score <span className="mono text-fg">{evs.step_up?.step_up?.voice}</span><SimBadge /></div>}
+                {stepped && <div className="mt-4 flex items-center gap-2 text-sm text-muted">Step-up voice score <span className="mono text-fg">{evs.step_up?.step_up?.voice}</span><SimBadge /><span className="text-xs text-dim">shown only, not used in the decision</span></div>}
               </>
             ) : <div className="mt-4 flex items-center gap-2 text-sm text-muted"><CircleDashed className="size-4 animate-spin" />Running checks</div>}
           </section>
           {evs.explain?.summary && (
             <section className="panel fade-up p-6">
               <div className="flex items-center gap-2"><Sparkles className="size-4 text-brand" /><div className="label">Analyst summary</div></div>
-              <p className="mt-3 text-sm leading-relaxed text-fg">{evs.explain.summary}</p>
+              <p className="mt-3 text-sm leading-relaxed text-fg">{readable(evs.explain.summary)}</p>
             </section>
           )}
           {done && <Link href={`/dashboard/case/${id}`} className="btn w-full">Open case in analyst console <ArrowRight className="size-4" /></Link>}
@@ -174,10 +195,10 @@ function Node({ n, ev, running, compact, tech }: { n: (typeof NODES)[number]; ev
       {tech && compact && <div className="mt-1 truncate text-[11px] text-dim">{n.sub}</div>}
       {risk != null && <RiskBar value={risk} className="mt-2.5" />}
       {tech && !!ev?.reasons?.length && (
-        <div className="mt-2.5 flex flex-wrap gap-1">
-          {ev.reasons.slice(0, compact ? 3 : 6).map((r) => <span key={r} className="chip mono text-[10px]">{r}</span>)}
-          {ev.reasons.length > (compact ? 3 : 6) && <span className="chip text-[10px]">+{ev.reasons.length - (compact ? 3 : 6)}</span>}
-        </div>
+        <ul className="mt-2.5 space-y-1 [&_li]:text-xs">
+          {ev.reasons.slice(0, compact ? 3 : 6).map((r) => <Finding key={r} code={r} text={ev.reason_texts?.[r] ?? r} />)}
+          {ev.reasons.length > (compact ? 3 : 6) && <li className="pl-4 text-dim">and {ev.reasons.length - (compact ? 3 : 6)} more</li>}
+        </ul>
       )}
     </div>
   );

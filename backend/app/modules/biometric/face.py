@@ -32,19 +32,29 @@ def reuse_threshold() -> float:
     return 0.45
 
 
-def embed(img_bgr: np.ndarray) -> dict | None:
-    """Largest face: normed 512-d embedding + head pose (pitch, yaw, roll)."""
+def faces(img_bgr: np.ndarray, min_det: float = 0.5) -> list[dict]:
+    """Every confident face: normed 512-d embedding, head pose, and the nose position between the eyes
+    (0.5 = frontal; rises when the subject turns to THEIR left in a raw, unmirrored frame)."""
     img = img_bgr
     if max(img.shape[:2]) < 320:  # small crops detect better upscaled
         s = 320 / max(img.shape[:2])
         img = cv2.resize(img, None, fx=s, fy=s)
-    faces = analyzer().get(img)
-    if not faces:
-        return None
-    f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
-    pose = getattr(f, "pose", None)
-    return {"emb": f.normed_embedding.astype(np.float32), "pose": None if pose is None else [float(p) for p in pose],
-            "det": float(f.det_score)}
+    out = []
+    for f in analyzer().get(img):
+        if f.det_score < min_det:
+            continue
+        le, re, nose = f.kps[0], f.kps[1], f.kps[2]
+        pose = getattr(f, "pose", None)
+        out.append({"emb": f.normed_embedding.astype(np.float32), "pose": None if pose is None else [float(p) for p in pose],
+                    "det": float(f.det_score), "nose_ratio": float((nose[0] - le[0]) / max(re[0] - le[0], 1e-6)),
+                    "area": float((f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))})
+    return sorted(out, key=lambda x: -x["area"])
+
+
+def embed(img_bgr: np.ndarray) -> dict | None:
+    """Largest face only."""
+    fs = faces(img_bgr, min_det=0.0)
+    return fs[0] if fs else None
 
 
 def card_portrait(card_norm_bgr: np.ndarray) -> np.ndarray:
@@ -67,4 +77,5 @@ def passive(selfie_bgr: np.ndarray) -> dict:
     r = np.hypot(yy - h / 2, xx - w / 2)
     band = F[(r > min(h, w) * .15) & (r < min(h, w) * .45)]
     moire = float(band.max() / (np.median(band) + 1e-6))  # isolated strong peak = periodic screen pattern
-    return {"blur": round(blur, 1), "moire": round(moire, 1)}
+    from app.modules.document.forensics import dhash
+    return {"blur": round(blur, 1), "moire": round(moire, 1), "dhash": dhash(selfie_bgr)}

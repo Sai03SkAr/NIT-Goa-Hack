@@ -4,10 +4,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import { Camera, Check, ChevronRight, Lock, ShieldCheck, Sparkles, Upload, Wand2 } from "lucide-react";
 import { Logo } from "@/components/ui";
-import { fileUrl, post } from "@/lib/api";
+import { ApiError, fileUrl, post } from "@/lib/api";
 import { Telemetry } from "@/lib/telemetry";
 import { cameraLabels, deviceId } from "@/lib/device";
-import { CHALLENGE_TEXT, type Challenge, getLandmarker, grabFrame, pickChallenges, satisfied, signal } from "@/lib/liveness";
+import { CHALLENGE_TEXT, type Challenge, type ServerChallenge, getLandmarker, grabFrame, satisfied, signal } from "@/lib/liveness";
 
 type Form = { name: string; dob: string; gender: string; id_number: string; pan: string; phone: string; email: string; address: string; pincode: string };
 const EMPTY: Form = { name: "", dob: "", gender: "M", id_number: "", pan: "", phone: "", email: "", address: "", pincode: "" };
@@ -27,23 +27,32 @@ function Wizard() {
   const [err, setErr] = useState("");
   const tel = useMemo(() => new Telemetry(), []);
   useEffect(() => { tel.attach(); return () => tel.detach(); }, [tel]);
+  // applicant session cookie (HttpOnly) + the consent notice version the server expects
+  const [consentVersion, setConsentVersion] = useState("");
+  useEffect(() => { post<{ consent_version: string }>("/api/session").then((r) => setConsentVersion(r.consent_version)).catch((e) => setErr(String(e))); }, []);
+  // one key per submission attempt: a double click or network retry cannot create two applications
+  const idem = useRef<string>("");
 
-  async function submit(selfie: Blob, frames: Blob[], liveness: Record<string, unknown>, cams: string[], active: string) {
+  async function submit(selfie: Blob, frames: Blob[], challengeId: string | null, cams: string[], active: string) {
     setSubmitting(true); setErr("");
+    idem.current ||= crypto.randomUUID();
     try {
       const fd = new FormData();
       const payload = {
         form: { ...form, id_number: form.id_number.replace(/\D/g, ""), pan: form.pan.toUpperCase().trim() },
-        device: { device_id: await deviceId(), user_agent: navigator.userAgent, camera_labels: cams, active_camera: active },
-        telemetry: tel.snapshot(), liveness,
+        device: { device_id: await deviceId(), user_agent: navigator.userAgent, camera_labels: cams, active_camera: active || null },
+        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion }, challenge_id: challengeId,
       };
       fd.append("payload", JSON.stringify(payload));
       fd.append("card", card!);
       fd.append("selfie", selfie, "selfie.jpg");
       frames.forEach((f, i) => fd.append("frames", f, `frame${i}.jpg`));
-      const { app_id } = await post<{ app_id: string }>("/api/apply", fd);
+      const { app_id } = await post<{ app_id: string }>("/api/apply", fd, { "Idempotency-Key": idem.current });
       router.push(`/kyc/progress/${app_id}`);
-    } catch (e) { setErr(String(e)); setSubmitting(false); }
+    } catch (e) {
+      setErr(e instanceof ApiError && e.status === 503 ? "Our checks are busy right now. Please try again in a few seconds." : String(e instanceof Error ? e.message : e));
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -88,8 +97,8 @@ function Consent({ onNext }: { onNext: () => void }) {
       <h1 className="mt-4 text-2xl font-semibold tracking-tight">Verify your identity</h1>
       <p className="mt-2 text-muted">Takes about 2 minutes. We'll check your ID card, take a short selfie with a liveness challenge and confirm your details with the issuing registries.</p>
       <ul className="mt-6 space-y-3 text-sm text-muted">
-        {["ID numbers are stored as salted hashes and shown masked (last 4 digits only).",
-          "Your selfie is compared with your card photo and the issuer's registry photo, then retained per policy.",
+        {["ID numbers are linked only through keyed hashes and shown masked (last 4 digits only).",
+          "Your selfie and face-check frames are compared on our server with your card photo and the issuer's registry photo. Images are deleted after 30 days.",
           "We record how the form is filled (timing, not content) to detect bots and scripted fraud.",
           "An AI assistant may summarise the result for a human reviewer. It never makes the decision."].map((t) => (
           <li key={t} className="flex gap-3"><Check className="mt-0.5 size-4 shrink-0 text-brand" />{t}</li>
@@ -180,7 +189,7 @@ function DocStep({ card, setCard, onBack, onNext }: { card: File | null; setCard
 
 type LiveState = "idle" | "loading" | "ready" | "challenge" | "passed" | "failed";
 
-function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => void; onDone: (selfie: Blob, frames: Blob[], live: Record<string, unknown>, cams: string[], active: string) => void }) {
+function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => void; onDone: (selfie: Blob, frames: Blob[], challengeId: string | null, cams: string[], active: string) => void }) {
   const video = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<LiveState>("idle");
   const [chs, setChs] = useState<Challenge[]>([]);
@@ -188,10 +197,11 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
   const [left, setLeft] = useState(8);
   const [hint, setHint] = useState("");
   const [cams, setCams] = useState<{ labels: string[]; active: string; virtual: boolean }>({ labels: [], active: "", virtual: false });
-  const result = useRef<{ selfie?: Blob; frames: Blob[]; done: Challenge[] }>({ frames: [], done: [] });
+  const result = useRef<{ selfie?: Blob; frames: Blob[]; done: Challenge[]; id: string | null }>({ frames: [], done: [], id: null });
   const stream = useRef<MediaStream | null>(null);
 
-  useEffect(() => () => stream.current?.getTracks().forEach((t) => t.stop()), []);
+  const stopCamera = () => stream.current?.getTracks().forEach((t) => t.stop());
+  useEffect(() => stopCamera, []);
 
   async function start() {
     setState("loading");
@@ -208,9 +218,11 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
   async function run() {
     const lm = await getLandmarker();
     const v = video.current!;
-    const list = pickChallenges();
+    let ch: ServerChallenge;
+    try { ch = await post<ServerChallenge>("/api/liveness/challenge"); } catch (e) { setHint(`Could not start the face check: ${e}`); return; }
+    const list = ch.sequence;
     setChs(list); setIdx(0); setState("challenge");
-    result.current = { frames: [await grabFrame(v)], done: [] };
+    result.current = { frames: [await grabFrame(v)], done: [], id: ch.challenge_id };
     result.current.selfie = result.current.frames[0];
     for (let i = 0; i < list.length; i++) {
       setIdx(i);
@@ -232,15 +244,19 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
       result.current.frames.push(await grabFrame(v));
     }
     setState("passed");
+    stopCamera();
   }
 
-  function finish(passed: boolean) {
+  /** Frames go to the server whatever happened here; the server alone decides if the turns were real. */
+  function finish() {
     const r = result.current;
-    onDone(r.selfie!, r.frames, { challenges: chs, completed: r.done, passed, virtual_camera: cams.virtual, client: "mediapipe-facelandmarker" }, cams.labels, cams.active);
+    stopCamera();
+    onDone(r.selfie!, r.frames, r.id, cams.labels, cams.active);
   }
 
   async function uploadFallback(f: File) {
-    onDone(f, [], { challenges: [], passed: false, virtual_camera: false, client: "upload-fallback" }, [], "");
+    stopCamera();
+    onDone(f, [], null, [], "");
   }
 
   const current = chs[idx];
@@ -266,7 +282,7 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
       </div>
       <div className="panel flex flex-col p-6">
         <h2 className="text-xl font-semibold tracking-tight">Face check</h2>
-        <p className="mt-2 text-sm text-muted">Two random challenges, 8 seconds each. A replayed photo or video can't follow instructions it hasn't seen.</p>
+        <p className="mt-2 text-sm text-muted">Turn your head left and right in the order shown, 8 seconds per step. The order is chosen by our server for this session, and the frames are checked there.</p>
         <div className="mt-5 space-y-2 text-sm">
           <Row ok={state !== "idle" && state !== "loading"} text="Camera on" />
           <Row ok={state !== "idle" && state !== "loading" ? !cams.virtual : null} text={cams.virtual ? `Virtual camera streaming: ${cams.active}` : "Physical camera (no injection tool)"} bad={cams.virtual} />
@@ -274,16 +290,16 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
         </div>
         <div className="mt-auto pt-6">
           {state === "ready" && <button className="btn btn-primary w-full" onClick={run}><Sparkles className="size-4" />Start liveness check</button>}
-          {state === "passed" && <button className="btn btn-primary w-full" disabled={busy} onClick={() => finish(true)}>{busy ? "Submitting…" : <>Submit application <ChevronRight className="size-4" /></>}</button>}
+          {state === "passed" && <button className="btn btn-primary w-full" disabled={busy} onClick={finish}>{busy ? "Submitting…" : <>Submit application <ChevronRight className="size-4" /></>}</button>}
           {state === "failed" && <div className="space-y-2">
             <button className="btn w-full" onClick={run}>Try again</button>
-            <button className="btn btn-danger w-full" disabled={busy} onClick={() => finish(false)}>Submit anyway (will be reviewed)</button>
+            <button className="btn btn-danger w-full" disabled={busy} onClick={finish}>Submit anyway</button>
           </div>}
           <div className="mt-4 flex items-center justify-between">
             <button className="btn" onClick={onBack}>Back</button>
             <label className="cursor-pointer text-xs text-dim underline-offset-2 hover:underline">
               <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadFallback(e.target.files[0])} />
-              No camera? Upload a selfie (no liveness)
+              No camera? Upload a selfie (a person will review it)
             </label>
           </div>
         </div>
@@ -319,6 +335,8 @@ function DemoKit({ onPick }: { onPick: (f: Form, card: File) => void }) {
       const k = await post("/api/demo/kit", fd);
       setKit(k);
       try { localStorage.setItem("trueid-demo-kit", JSON.stringify(k)); } catch {}
+    } catch (e) {
+      setKit({ error: e instanceof ApiError && e.status === 401 ? "Sign in to the analyst console in this browser first." : String(e) } as any);
     } finally { setBusy(false); }
   }
   async function pick(k: string, autofill: boolean) {

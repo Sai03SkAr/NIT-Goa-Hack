@@ -46,8 +46,9 @@ def _features_for(args):
     selfie = fn(cv2.imread(str(GEN / app["selfie_path"])), level)
     d = doc.assess(doc.extract(card), app["form"], datetime.fromisoformat(app["ts"]).date())
     b_ext = bio.extract(selfie, doc.normalize(card))
-    reuse = {"diff_name": base.get("bio_face_reuse_diff_name", 0), "max_sim": base.get("bio_face_reuse_max_sim", 0)}
-    b = bio.assess(b_ext, registry_face(app["form"]["id_number"]), app["liveness"], app["device"]["camera_labels"], reuse,
+    reuse = {"diff_name": base.get("bio_face_reuse_diff_name", 0), "max_sim": base.get("bio_face_reuse_max_sim", 0),
+             "media": base.get("bio_media_reuse", 0)}
+    b = bio.assess(b_ext, registry_face(app["form"]["id_number"]), bio.fixture_liveness(app["liveness"]), app["device"]["camera_labels"], reuse,
                    active_camera=app["device"].get("active_camera"))
     return {**base, **d.features, **b.features}
 
@@ -67,7 +68,7 @@ def summarize(y, scored):
     flag = np.array([s["band"] != "APPROVE" for s in scored])
     doc = np.array([s["doc_risk"] for s in scored])
     pix = np.array([s["pixel"] for s in scored])
-    fused = np.array([max(s["prob"], .95) if s["band"] == "REJECT" else s["prob"] for s in scored])
+    fused = np.array([s["prob"] for s in scored])  # ranking metric on the model probability, never a rule-edited score
     auc = lambda s: round(float(roc_auc_score(y, s)), 4) if len(set(y)) > 1 else None
     bands = np.array([s["band"] for s in scored])
     return {"fused_recall": round(float(flag[y == 1].mean()), 4), "fused_fpr": round(float(flag[y == 0].mean()), 4),
@@ -82,7 +83,7 @@ def main(workers=4, n_genuine=100):
     df = pd.read_csv(PRE / "features.csv")
     te = df[df.day >= 20]
     sample = pd.concat([te[te.label == 1], te[te.label == 0].sample(min(n_genuine, (te.label == 0).sum()), random_state=0)])
-    feat_cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor")]
+    feat_cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor", "ev", "meta")]  # ev_/meta_: policy evidence, kept for the decision
     base = {r.app_id: {c: (np.nan if pd.isna(getattr(r, c)) else getattr(r, c)) for c in feat_cols} for r in sample.itertuples()}
     y = sample.label.values
     results = []
@@ -102,6 +103,8 @@ def main(workers=4, n_genuine=100):
     if adaptive.exists():
         results.append(json.loads(adaptive.read_text()))
     (PRE / "attacks.json").write_text(json.dumps({"n_sample": int(len(sample)), "n_fraud": int(y.sum()),
+                                                  "evaluation_kind": "offline re-extraction on synthetic test-split images; "
+                                                                     "liveness is a generator-labelled fixture",
                                                   "attacks": results}, indent=1, default=float))
     print("wrote attacks.json")
 
@@ -194,7 +197,7 @@ def behavioural(df, apps):
                          {"detector": "Humanized bot recall", "value": round(float(flag[bots.index[hum]].mean()), 3) if hum.any() else None}]})
     vc = te[te.bio_virtual_cam == 1]
     out.append({"id": "virtual_cam", "kind": "single", "name": "Virtual camera injection", "target": "Liveness",
-                "defense": "Device-label hard flag",
+                "defense": "Client-reported camera label (a hint: a determined attacker can rename the device)",
                 "rows": [{"detector": "Virtual-camera sessions blocked", "value": round(float(flag[vc.index].mean()), 3) if len(vc) else None},
                          {"detector": "n sessions", "value": int(len(vc))}]})
     rp = te[(te.bio_liveness_pass == 0)]

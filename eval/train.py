@@ -1,8 +1,14 @@
 """Train fusion (XGBoost + isotonic calibration) on a TIME split and write every D7 metric + the ablation.
 
 Split: days 0-15 train, 16-19 calibration, 20-29 test (no shuffling: fraud evolves over time).
-Outputs: models/{xgb.json, calibrator.joblib, features.json}, precomputed/{metrics.json, ablation.json, test_scores.csv}
+Outputs: models/{xgb.json, calibrator.joblib, features.json, manifest.json},
+         precomputed/{metrics.json, ablation.json, test_scores.csv}
+
+Ranking metrics (ROC/PR AUC) are computed on the calibrated MODEL probability. Decision metrics (recall, FPR, band
+counts) use the bands from app/policy.py, exactly as the live system decides. The two are never mixed.
 """
+import hashlib
+import subprocess
 import json
 import os
 import sys
@@ -17,8 +23,9 @@ from sklearn.metrics import (average_precision_score, confusion_matrix, f1_score
                              roc_auc_score)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from app.config import BANDS, MODELS, PRE  # noqa: E402
-from app.fusion.model import GROUPS, hard_rules, quality_low  # noqa: E402
+from app import policy  # noqa: E402
+from app.config import BANDS, FEATURE_SCHEMA_VERSION, MODELS, POLICY_VERSION, PRE  # noqa: E402
+from app.fusion.model import GROUPS  # noqa: E402
 
 PARAMS = dict(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
               min_child_weight=2, eval_metric="logloss", random_state=0, n_jobs=4)
@@ -47,19 +54,10 @@ def proba(m, df, cols):
     return m.predict_proba(df[cols].values.astype(np.float32))[:, 1]
 
 
-def final_scores(df, p):
-    """Apply hard rules on top of the calibrated probability (what the live system does)."""
-    out, bands = [], []
-    for (_, r), pi in zip(df.iterrows(), p):
-        row = r.to_dict()
-        forced, _ = hard_rules(row)
-        if forced != "REJECT" and quality_low(row):
-            forced = "REVIEW"
-            pi = min(pi, 0.5)  # capped exactly as decide() caps it
-        s = max(pi, 0.95) if forced == "REJECT" else (max(pi, BANDS["approve_below"]) if forced == "REVIEW" else pi)
-        out.append(s)
-        bands.append("APPROVE" if s < BANDS["approve_below"] else ("REJECT" if s >= BANDS["reject_at"] else "REVIEW"))
-    return np.array(out), bands
+def policy_bands(df, p):
+    """Bands from the shared policy on top of the model probability (what the live system does)."""
+    out = [policy.decide(r.to_dict(), {"prob": float(pi), "status": "ok"}) for (_, r), pi in zip(df.iterrows(), p)]
+    return [d["band"] for d in out], np.array([d["approval_eligible"] for d in out])
 
 
 def topk_recall(y, s, frac):
@@ -71,22 +69,36 @@ def topk_recall(y, s, frac):
 FN_COST, FP_COST = float(os.getenv("TRUEID_FN_COST", "10")), 1.0  # cost of a missed fraud vs a false alarm; set from real loss data
 
 
-def cost_curve(ca, p_ca, te, s_te):
-    """Choose the APPROVE cut-off on the calibration split (never on test), report its cost on test."""
-    s_ca, _ = final_scores(ca, p_ca)
+def cost_curve(ca, p_ca, te, p_te):
+    """Choose the APPROVE cut-off on the calibration split (never on test), report its cost on test.
+    Cases the policy cannot approve (missing/failed evidence) are flagged whatever the cut-off."""
+    (_, e_ca), (_, e_te) = policy_bands(ca, p_ca), policy_bands(te, p_te)
     y_ca, y_te = ca.label.values, te.label.values
-    forced = lambda df: np.array([hard_rules(r.to_dict())[0] is not None for _, r in df.iterrows()])
-    f_ca, f_te = forced(ca), forced(te)  # hard-rule cases are flagged whatever the cut-off
 
-    def cost(y, s, f, t):
-        flag = f | (s >= t)
+    def cost(y, s, e, t):
+        flag = ~e | (s >= t)
         return int(FN_COST * (~flag & (y == 1)).sum() + FP_COST * (flag & (y == 0)).sum())
     grid = np.round(np.linspace(0.02, 0.9, 45), 2)
-    pts = [{"t": float(t), "cost_cal": cost(y_ca, s_ca, f_ca, t), "cost_test": cost(y_te, s_te, f_te, t)} for t in grid]
+    pts = [{"t": float(t), "cost_cal": cost(y_ca, p_ca, e_ca, t), "cost_test": cost(y_te, p_te, e_te, t)} for t in grid]
     best = min(pts, key=lambda p: (p["cost_cal"], abs(p["t"] - BANDS["approve_below"])))
     return {"fn_cost": FN_COST, "fp_cost": FP_COST, "points": pts, "chosen_on": "calibration split (days 16-19)",
             "recommended_approve_below": best["t"], "current_approve_below": BANDS["approve_below"],
-            "test_cost_recommended": best["cost_test"], "test_cost_current": cost(y_te, s_te, f_te, BANDS["approve_below"])}
+            "test_cost_recommended": best["cost_test"], "test_cost_current": cost(y_te, p_te, e_te, BANDS["approve_below"])}
+
+
+def bootstrap_ci(y, p, flag, n=300, seed=0):
+    """95% percentile intervals: resample test applications with replacement."""
+    rng = np.random.default_rng(seed)
+    acc = {"roc_auc": [], "recall_fdr": [], "fpr": []}
+    for _ in range(n):
+        i = rng.integers(0, len(y), len(y))
+        yy, pp, ff = y[i], p[i], flag[i]
+        if yy.min() == yy.max():
+            continue
+        acc["roc_auc"].append(roc_auc_score(yy, pp))
+        acc["recall_fdr"].append(ff[yy == 1].mean())
+        acc["fpr"].append(ff[yy == 0].mean())
+    return {k: [round(float(np.percentile(v, 2.5)), 4), round(float(np.percentile(v, 97.5)), 4)] for k, v in acc.items()}
 
 
 def metrics(y, s, bands, df):
@@ -105,6 +117,9 @@ def metrics(y, s, bands, df):
         "f1": round(f1_score(y, flag), 4), "fpr": round(fp / max(fp + tn, 1), 4),
         "reject_precision": round(precision_score(y, rej, zero_division=0), 4), "reject_recall": round(recall_score(y, rej), 4),
         "roc_auc": round(roc_auc_score(y, s), 4), "pr_auc": round(average_precision_score(y, s), 4),
+        "ranking_metrics_on": "calibrated model probability (before policy)",
+        "decision_metrics_on": f"policy bands ({POLICY_VERSION})",
+        "ci95": bootstrap_ci(y, s, flag),
         "fdr_at_top3pct": round(topk_recall(y, s, .03), 4), "fdr_at_top5pct": round(topk_recall(y, s, .05), 4),
         "confusion": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
         "per_type": per_type, "hard_negative_false_flag_by_sub": sub_hn,
@@ -112,6 +127,23 @@ def metrics(y, s, bands, df):
         "latency_ms": {"p50": float(np.percentile(lat, 50)), "p95": float(np.percentile(lat, 95)),
                        "note": "per-application CPU time for all modules (seeded batch, excludes LLM)"},
     }
+
+
+def manifest(feats, n_tr, n_ca, n_te):
+    sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()[:16] if p.exists() else None
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
+                                cwd=Path(__file__).parent).stdout.strip() or None
+    except OSError:
+        commit = None
+    return {"policy_version": POLICY_VERSION, "feature_schema_version": FEATURE_SCHEMA_VERSION, "features": feats,
+            "xgb_params": PARAMS, "seed": PARAMS["random_state"], "git_commit": commit, "fn_cost": FN_COST,
+            "data": {"features.csv": sha(PRE / "features.csv"), "augmented.csv": sha(PRE / "augmented.csv")},
+            "split": {"train": "days 0-15", "calibration": "days 16-19", "test": "days 20-29",
+                      "n": {"train": n_tr, "calibration": n_ca, "test": n_te}},
+            "evaluation_kind": "synthetic population (generated identities, LFW faces); liveness outcomes in these "
+                               "rows are generator-labelled fixtures, not live camera sessions",
+            "versions": {"xgboost": xgb.__version__, "numpy": np.__version__, "pandas": pd.__version__}}
 
 
 def main():
@@ -128,9 +160,11 @@ def main():
     m = fit(tr, feats)
     iso = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(proba(m, ca, feats), ca.label.values)
     p_te = iso.predict(proba(m, te, feats))
-    s_te, bands = final_scores(te, p_te)
+    s_te = p_te
+    bands, eligible = policy_bands(te, p_te)
     res = metrics(te.label.values, s_te, bands, te)
-    res["cost_curve"] = cost_curve(ca, iso.predict(proba(m, ca, feats)), te, s_te)
+    res["held_by_evidence"] = round(float((~eligible).mean()), 4)
+    res["cost_curve"] = cost_curve(ca, iso.predict(proba(m, ca, feats)), te, p_te)
 
     gain = m.get_booster().get_score(importance_type="gain")
     top = sorted(((feats[int(k[1:])] if k.startswith("f") and k[1:].isdigit() else k, v) for k, v in gain.items()),
@@ -142,6 +176,8 @@ def main():
     alias = {"injection": {"bot", "third_party", "ring"}}  # replay/virtual-cam is how bots and fabricators inject
     hit = [p == t or t in alias.get(p, ()) for p, t in zip(pred, caught.fraud_type)]
     res["fraud_type_accuracy"] = round(float(np.mean(hit)), 3) if hit else None
+    res["fraud_type_accuracy_exact"] = round(float(np.mean([p == t for p, t in zip(pred, caught.fraud_type)])), 3) if hit else None
+    res["fraud_type_note"] = "accuracy counts 'injection' as correct for bot/third-party/ring sessions; _exact does not"
     res["fraud_type_confusion"] = pd.crosstab(caught.fraud_type.values, np.array(pred)).to_dict()
     res["top_features"] = [{"feature": k, "gain": round(v, 2)} for k, v in top]
     res["leakage_check"] = "pass: no image-size/JPEG/timing columns among features" if not any(
@@ -152,7 +188,7 @@ def main():
     def run(name, cols, rules=False):
         mm = fit(tr, cols)
         pi = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(proba(mm, ca, cols), ca.label.values).predict(proba(mm, te, cols))
-        s, b = final_scores(te, pi) if rules else (pi, ["APPROVE" if x < BANDS["approve_below"] else "REVIEW" for x in pi])
+        s, b = pi, (policy_bands(te, pi)[0] if rules else ["APPROVE" if x < BANDS["approve_below"] else "REVIEW" for x in pi])
         flag = np.array([x != "APPROVE" for x in b]).astype(int)
         y = te.label.values
         abl.append({"setting": name, "n_features": len(cols), "roc_auc": round(roc_auc_score(y, s), 4),
@@ -164,11 +200,12 @@ def main():
     for g, pre in GROUPS.items():
         run(f"all except {g}", [c for c in feats if not c.startswith(pre)])
     run("fused (all modules)", feats)
-    run("fused + hard rules", feats, rules=True)
+    run("fused + evidence policy", feats, rules=True)
 
     m.save_model(MODELS / "xgb.json")
     joblib.dump(iso, MODELS / "calibrator.joblib")
     (MODELS / "features.json").write_text(json.dumps(feats))
+    (MODELS / "manifest.json").write_text(json.dumps(manifest(feats, len(tr), len(ca), len(te)), indent=1))
     (PRE / "metrics.json").write_text(json.dumps(res, indent=1, default=float))
     (PRE / "ablation.json").write_text(json.dumps(abl, indent=1))
     te.assign(score=s_te, band=bands)[["app_id", "day", "label", "fraud_type", "sub", "score", "band"]].to_csv(

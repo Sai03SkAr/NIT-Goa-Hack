@@ -10,7 +10,7 @@ export const REJECT = "#b42318";
 /** Categorical colors for fraud patterns, distinct from the decision colors and readable on white. */
 export const TYPE_COLORS: Record<string, string> = {
   none: "#8a93a2", first_party: "#a03d8a", third_party: "#5160b8", ring: "#c2410c", bot: "#8a6a00",
-  tampered: "#0e6f86", injection: "#4d7c0f",
+  tampered: "#0e6f86", injection: "#4d7c0f", mule: "#7c4a1e", inconclusive: "#6b7280",
 };
 
 /** Identity-graph link kinds, strongest evidence in the strongest colors. */

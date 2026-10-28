@@ -4,13 +4,14 @@ import json
 import os
 import re
 
-from app.schemas import REASONS
+from app.schemas import code_text
 
 PROMPT = """You are a KYC fraud analyst assistant. Summarise this automated decision in 3-4 sentences for a human
 reviewer. Rules: cite reason codes in square brackets exactly as given (e.g. [REG_SIM_NEW]); never invent a reason,
 code, number or action; do not change the decision; end with the recommended action verbatim.
 
-Decision: {band} (calibrated fraud probability {prob:.2f})
+Decision: {band} ({prob})
+Unresolved required checks: {unresolved}
 Fraud type: {ftype}
 Recommended action: {action}
 Reason codes (module: code, weight): {reasons}
@@ -27,9 +28,15 @@ def template(case: dict) -> str:
     if not rs:
         why = "No module raised a risk signal."
     else:
-        why = "Main signals: " + "; ".join(f"{REASONS[c]} [{c}]" for _, c, _ in rs[:4]) + "."
-    return (f"Decision {case['band']} with calibrated fraud probability {case['prob']:.2f}. {why} "
+        why = "Main signals: " + "; ".join(f"{code_text(c)} [{c}]" for _, c, _ in rs[:4]) + "."
+    gaps = case.get("rule_codes_ev") or []
+    held = (" Not approvable automatically: " + "; ".join(code_text(c) for c in gaps[:4]) + ".") if gaps else ""
+    return (f"Decision {case['band']} ({_prob(case)}).{held} {why} "
             f"Pattern: {case['fraud_label']}. Recommended action: {case['action']}.")
+
+
+def _prob(case):
+    return "risk model unavailable" if case.get("prob") is None else f"calibrated fraud probability {case['prob']:.2f}"
 
 
 def summarize(case: dict) -> tuple[str, str]:
@@ -41,7 +48,8 @@ def summarize(case: dict) -> tuple[str, str]:
         from google import genai
         client = genai.Client(api_key=key)
         rs = _top_reasons(case["modules"])
-        prompt = PROMPT.format(band=case["band"], prob=case["prob"], ftype=case["fraud_label"], action=case["action"],
+        prompt = PROMPT.format(band=case["band"], prob=_prob(case),
+                               unresolved=", ".join(code_text(c) for c in case.get("rule_codes_ev") or []) or "none", ftype=case["fraud_label"], action=case["action"],
                                reasons=json.dumps(rs), shap=json.dumps(case.get("shap", [])))
         out = client.models.generate_content(model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), contents=prompt).text
         cited = set(re.findall(r"\[([A-Z_]+)\]", out or ""))

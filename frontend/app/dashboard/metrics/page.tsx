@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Section, Stat, TYPE_COLORS, pct } from "@/components/ui";
+import { Section, Stat, TYPE_COLORS, featureLabel, pct } from "@/components/ui";
 import { get, post } from "@/lib/api";
 import { AXIS, BRAND, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
 
@@ -28,7 +28,14 @@ export default function Metrics() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Evaluation</h1>
-        <p className="mt-1 max-w-4xl text-sm text-muted">{m.definition}. Time-based split (train days 0-15, calibrate 16-19, test 20-29), random JPEG/resize/noise on every class, hard negatives (families, hostels, transliteration, new-to-credit) in both train and test. We claim <span className="text-fg">relative</span> gains - see the ablation.</p>
+        <p className="mt-1 max-w-4xl text-sm text-muted">{m.definition}. Time-based split (train days 0-15, calibrate 16-19, test 20-29), random JPEG/resize/noise on every class, hard negatives (families, hostels, transliteration, new-to-credit) in both train and test. We claim <span className="text-fg">relative</span> gains: see the ablation.</p>
+        <div className="mt-3 max-w-4xl rounded-lg border border-line bg-bg-2 p-3 text-xs text-muted">
+          <span className="font-medium text-fg">How these numbers were made. </span>
+          {d.provenance?.evaluation_kind ?? "synthetic population"}. ROC/PR-AUC are on the {m.ranking_metrics_on ?? "model probability"}; recall, FPR and band counts are on the {m.decision_metrics_on ?? "policy bands"}.
+          {m.held_by_evidence != null && <> {pct(m.held_by_evidence)} of test cases were held by the evidence policy regardless of score.</>}
+          {d.provenance?.git_commit && <> Model built from commit <span className="mono">{d.provenance.git_commit}</span>, {d.provenance.policy_version}.</>}
+          {m.ci95 && <> 95% bootstrap intervals: recall {pct(m.ci95.recall_fdr[0])}–{pct(m.ci95.recall_fdr[1])}, FPR {pct(m.ci95.fpr[0], 2)}–{pct(m.ci95.fpr[1], 2)}, ROC-AUC {m.ci95.roc_auc[0].toFixed(3)}–{m.ci95.roc_auc[1].toFixed(3)}.</>}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -51,7 +58,7 @@ export default function Metrics() {
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <Section title="Ablation: each module alone vs fused (ROC-AUC / recall)" right={<span className="text-xs text-dim">the proof of multi-source correlation</span>}>
           <ResponsiveContainer width="100%" height={330}>
-            <BarChart data={[...single, ...fused].map((a) => ({ ...a, name: a.setting.replace(" only", "").replace("fused (all modules)", "fused").replace("fused + hard rules", "fused + rules") }))}>
+            <BarChart data={[...single, ...fused].map((a) => ({ ...a, name: a.setting.replace(" only", "").replace("fused (all modules)", "fused").replace("fused + evidence policy", "fused + policy") }))}>
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis dataKey="name" {...AXIS} />
               <YAxis domain={[0, 1]} {...AXIS} />
@@ -132,7 +139,7 @@ export default function Metrics() {
           <div className="space-y-1.5">
             {m.top_features.slice(0, 10).map((f: any) => (
               <div key={f.feature} className="flex items-center gap-3 text-xs">
-                <span className="mono w-52 truncate text-muted">{f.feature}</span>
+                <span className="w-52 truncate text-muted" title={f.feature}>{featureLabel(f.feature)}</span>
                 <div className="h-1.5 flex-1 rounded-full bg-bg-2"><div className="h-full rounded-full bg-brand" style={{ width: `${(f.gain / m.top_features[0].gain) * 100}%` }} /></div>
                 <span className="mono w-12 text-right text-dim">{f.gain.toFixed(1)}</span>
               </div>

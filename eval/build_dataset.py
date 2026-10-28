@@ -21,7 +21,7 @@ from app.config import FACE_THRESHOLD_FILE, GEN, MODELS, PRE  # noqa: E402
 
 EXT = PRE / "extract"
 EXT.mkdir(parents=True, exist_ok=True)
-TRAIN_DAYS = 20
+TRAIN_DAYS = 16  # thresholds and the IsolationForest see the training days only (calibration starts day 16)
 
 
 def _extract_one(app: dict) -> str:
@@ -133,10 +133,10 @@ def stage2(apps, ext):
         e = ext[a["app_id"]]
         today = datetime.fromisoformat(a["ts"]).date()
         sel = e["bio"]["selfie"]
-        rec = History.record(a, sel["emb"] if sel else None)
+        rec = History.record(a, sel["emb"] if sel else None, e["bio"]["passive"].get("dhash"))
         d = doc.assess(e["doc"], a["form"], today)
-        reuse = hist.face_matches(rec["face"], rec["name"])
-        b = bio.assess(e["bio"], registry_face(a["form"]["id_number"]), a["liveness"], a["device"]["camera_labels"], reuse,
+        reuse = hist.face_matches(rec["face"], rec["name"]) | {"media": hist.media_matches(rec["media"])}
+        b = bio.assess(e["bio"], registry_face(a["form"]["id_number"]), bio.fixture_liveness(a["liveness"]), a["device"]["camera_labels"], reuse,
                        registry_face_url(a["form"]["id_number"]), a["device"].get("active_camera"))
         be = beh.assess(a, rec, hist)
         r = regm.assess(a["form"], today)

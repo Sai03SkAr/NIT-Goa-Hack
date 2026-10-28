@@ -18,6 +18,13 @@ def tele_vector(t: dict) -> np.ndarray:
                      t["blur_count"], t["mouse_entropy"]], dtype=np.float32)
 
 
+def _num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return np.nan
+
+
 @lru_cache(maxsize=1)
 def iforest():
     p = MODELS / "behavior_iforest.joblib"
@@ -26,14 +33,15 @@ def iforest():
 
 def assess(app: dict, rec: dict, hist) -> ModuleResult:
     t0 = time.time()
-    t, ts, a = app["telemetry"], rec["ts"], rec["attrs"]
+    raw, ts, a = app.get("telemetry") or {}, rec["ts"], rec["attrs"]
+    t = {k: _num(raw.get(k)) for k in TELE_KEYS}  # missing telemetry stays unknown (NaN), never a made-up "normal"
     R, f = [], {}
-    f["beh_fill_time"] = float(t["fill_time"])
-    f["beh_iki_mean"], f["beh_iki_std"] = float(t["iki_mean"]), float(t["iki_std"])
-    f["beh_iki_cv"] = float(t["iki_std"] / max(t["iki_mean"], 1))
+    f["beh_fill_time"] = t["fill_time"]
+    f["beh_iki_mean"], f["beh_iki_std"] = t["iki_mean"], t["iki_std"]
+    f["beh_iki_cv"] = t["iki_std"] / max(t["iki_mean"], 1) if np.isfinite(t["iki_mean"]) else np.nan
     f["beh_paste_frac"] = t["paste_fields"] / 7
-    f["beh_corrections"], f["beh_blur"], f["beh_mouse_entropy"] = float(t["corrections"]), float(t["blur_count"]), float(t["mouse_entropy"])
-    if t["fill_time"] < 20:
+    f["beh_corrections"], f["beh_blur"], f["beh_mouse_entropy"] = t["corrections"], t["blur_count"], t["mouse_entropy"]
+    if t["fill_time"] < 20:  # NaN comparisons are False: no telemetry, no behaviour reasons
         R.append(reason("BEH_FAST_FILL", 0.3))
     if t["paste_fields"] >= 5:
         R.append(reason("BEH_PASTE_HEAVY", 0.25))
@@ -61,7 +69,8 @@ def assess(app: dict, rec: dict, hist) -> ModuleResult:
         R.append(reason("BEH_KEYSTROKE_LINK", 0.25))
 
     m = iforest()
-    anom = float(-m.score_samples(tele_vector(t)[None])[0]) if m is not None else np.nan
+    complete = all(np.isfinite(v) for v in t.values())
+    anom = float(-m.score_samples(tele_vector(t)[None])[0]) if m is not None and complete else np.nan
     f["beh_anomaly"] = anom
     if m is not None and anom > 0.6:
         R.append(reason("BEH_ANOMALY", 0.2))
@@ -70,5 +79,6 @@ def assess(app: dict, rec: dict, hist) -> ModuleResult:
     f["beh_risk"] = risk
     return ModuleResult(module="behavior", risk=round(risk, 3), reasons=R, features=f,
                         latency_ms=int((time.time() - t0) * 1000),
-                        evidence={"telemetry": {k: t[k] for k in TELE_KEYS}, "keystroke_matches": ks["matches"],
+                        evidence={"telemetry": {k: (t[k] if np.isfinite(t[k]) else None) for k in TELE_KEYS},
+                                  "telemetry_complete": complete, "keystroke_matches": ks["matches"],
                                   "velocity": {k: v for k, v in f.items() if k.startswith("beh_vel")}})

@@ -40,7 +40,7 @@ def get_case(app_id: str) -> dict | None:
             return None
         reasons = sorted(((m["module"], x["code"], x["weight"]) for m in r.modules for x in m["reasons"]),
                          key=lambda t: -t[2])
-        return {"app_id": r.app_id, "name": r.name, "band": r.band, "prob": round(r.prob, 3), "pattern": r.fraud_label,
+        return {"app_id": r.app_id, "name": r.name, "band": r.band, "prob": None if r.prob is None else round(r.prob, 3), "pattern": r.fraud_label,
                 "action": r.action, "hard_rules": r.rule_codes, "reasons": [c for _, c, w in reasons if w > 0][:8],
                 "top_shap": r.shap[:3]}
 

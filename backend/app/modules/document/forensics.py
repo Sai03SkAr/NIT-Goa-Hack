@@ -58,6 +58,28 @@ def ela_heatmap(card_bgr: np.ndarray, quality=90) -> np.ndarray:
     return cv2.addWeighted(card_bgr, 0.5, heat, 0.5, 0)
 
 
+# IPTC "digital source type" values that generators (and honest editors) write for AI-made media, plus generator names
+GENAI_MARKERS = (b"trainedalgorithmicmedia", b"compositewithtrainedalgorithmicmedia", b"algorithmicmedia",
+                 b"midjourney", b"dall-e", b"dall\xc2\xb7e", b"stable diffusion", b"stablediffusion", b"adobe firefly",
+                 b"gpt-image", b"imagen", b"flux.1", b"ideogram", b"leonardo.ai")
+
+
+def genai_marker(raw: bytes | None) -> str | None:
+    """Generator / AI-provenance marker in the file's metadata. Presence is strong; ABSENCE PROVES NOTHING
+    (metadata is trivially stripped). C2PA alone is not a marker: real phone cameras sign photos with it too."""
+    if not raw:
+        return None
+    blob = raw[:262144].lower()  # metadata segments sit at the start of JPEG/PNG/WebP files
+    return next((m.decode("utf-8", "ignore") for m in GENAI_MARKERS if m in blob), None)
+
+
+def dhash(img_bgr: np.ndarray) -> int:
+    """64-bit difference hash: survives recompression/resizing, so a re-submitted image is recognised."""
+    g = cv2.resize(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY), (9, 8), interpolation=cv2.INTER_AREA)
+    bits = (g[:, 1:] > g[:, :-1]).flatten()
+    return int("".join("1" if b else "0" for b in bits), 2)
+
+
 def exif_editor(raw: bytes | None) -> str | None:
     """Editing-software tag = weak positive. Missing EXIF is NOT a signal (browsers/WhatsApp strip it)."""
     if not raw:

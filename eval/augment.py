@@ -30,7 +30,7 @@ def main(n_genuine=360, n_fraud=120, workers=5, seed=3):
     tr = df[df.day < 16]
     pick = pd.concat([tr[tr.label == 0].sample(min(n_genuine, (tr.label == 0).sum()), random_state=seed),
                       tr[tr.label == 1].sample(min(n_fraud, (tr.label == 1).sum()), random_state=seed)])
-    cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor")]
+    cols = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor", "ev", "meta")]  # ev_/meta_: policy evidence, kept for the decision
     jobs, meta = [], []
     for r in pick.itertuples():
         attack = rng.choice(list(RANGES))

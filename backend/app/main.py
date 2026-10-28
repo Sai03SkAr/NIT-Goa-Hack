@@ -1,33 +1,38 @@
-"""TrueID Shield API. Run:  cd backend && ../.venv/bin/uvicorn app.main:app --port 8000"""
-import asyncio
+"""TrueID Shield API. Run:  cd backend && ../.venv/bin/uvicorn app.main:app --port 8000
+Access rules live in app/security.py (deny by default)."""
+import hashlib
+import io
 import json
 import pickle
-import queue
 import threading
 import time
 import uuid
-from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import cv2
 import networkx as nx
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
+from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app import db
-from app.config import API_KEY, APPLY_RATE_PER_MIN, BANDS, GEN, LIVE_HISTORY, PRE, RETENTION_DAYS, UPLOADS
+from app import db, liveness_sessions, policy
+from app.schemas import code_text
+from app import security as S
+from app.config import (ANALYST_SESSION_TTL_S, APPLY_RATE_PER_MIN, BANDS, CONSENT_VERSION, ENABLE_DEMO_TOOLS, GEN,
+                        LIVE_HISTORY, MAX_ACTIVE_JOBS, MAX_FRAMES, MAX_IMAGE_PIXELS, MAX_PAYLOAD_BYTES,
+                        MAX_UPLOAD_BYTES, PRE, RETENTION_DAYS, UPLOADS)
 from app.graph import pipeline as P
 from app.modules.biometric.face import reuse_threshold, threshold
 from app.modules.correlation.history import STRONG, History
 from app.modules.document import forensics
 from app.modules.document.agent import normalize as doc_normalize
 from app.modules.registry import mocks
+
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -40,32 +45,30 @@ async def lifespan(_app):
     yield
 
 
-app = FastAPI(title="TrueID Shield", version="1.0", lifespan=lifespan)
-# any local dev port (Next falls back to 3001+ when 3000 is busy); the SSE stream is called cross-origin
-app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
-                   allow_methods=["*"], allow_headers=["*"])
-app.include_router(mocks.router)
-
-# applicant-facing paths stay open (the SSE stream cannot send headers); everything else needs the key when one is set
-PUBLIC = ("/api/apply", "/api/health", "/api/metrics", "/api/demo/kit", "/files/demo/", "/files/trufor/", "/docs", "/openapi.json")
-_hits: dict[str, deque] = defaultdict(deque)
+app = FastAPI(title="TrueID Shield", version="2.0", lifespan=lifespan)
+app.include_router(mocks.router)  # /mock/* is analyst-only (deny by default)
 
 
 @app.middleware("http")
 async def guard(request: Request, call_next):
+    if request.method == "OPTIONS":
+        return Response(status_code=204)  # no CORS: the UI is same-origin through the Next.js proxy
+    if not S.origin_ok(request):
+        return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+    ok, code, why = S.allowed(request)
+    if not ok:
+        return JSONResponse({"detail": why}, status_code=code)
     path = request.url.path
-    if API_KEY and not path.startswith(PUBLIC) and request.method != "OPTIONS":
-        if API_KEY not in (request.headers.get("x-api-key"), request.query_params.get("key")):
-            return JSONResponse({"detail": "missing or wrong X-API-Key"}, status_code=401)
-    if path == "/api/apply" and request.method == "POST":
-        client = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0]
-        now, q = time.time(), _hits[client]
-        while q and now - q[0] > 60:
-            q.popleft()
-        if len(q) >= APPLY_RATE_PER_MIN:
-            return JSONResponse({"detail": "too many applications from this client, try again in a minute"}, status_code=429)
-        q.append(now)
-    return await call_next(request)
+    if request.method == "POST" and path in ("/api/apply", "/api/auth/login"):
+        limit = APPLY_RATE_PER_MIN if path == "/api/apply" else 10
+        if not S.rate_ok(path, S.client_ip(request), limit):
+            return JSONResponse({"detail": "too many requests from this client, try again in a minute"}, status_code=429)
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    if path.startswith("/api/"):
+        resp.headers.setdefault("Cache-Control", "no-store")
+    return resp
 
 
 def purge_expired_uploads() -> int:
@@ -75,10 +78,27 @@ def purge_expired_uploads() -> int:
         if f.is_file() and f.stat().st_mtime < cutoff:
             f.unlink(); n += 1
     return n
-app.mount("/files", StaticFiles(directory=GEN), name="files")
-app.mount("/uploads", StaticFiles(directory=UPLOADS), name="uploads")
 
-JOBS: dict[str, queue.Queue] = {}
+
+# ------------------------------------------------------------------ protected media (analyst only, see security.py)
+MEDIA_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+
+
+def _media(base: Path, rel: str):
+    target = (base / rel).resolve()
+    if not target.is_relative_to(base.resolve()) or target.suffix.lower() not in MEDIA_TYPES or not target.is_file():
+        raise HTTPException(404)
+    return FileResponse(target, media_type=MEDIA_TYPES[target.suffix.lower()], headers={"Cache-Control": "no-store"})
+
+
+@app.get("/files/{rel:path}")
+def files(rel: str):
+    return _media(GEN, rel)
+
+
+@app.get("/uploads/{rel:path}")
+def uploads(rel: str):
+    return _media(UPLOADS, rel)
 
 
 def _warm():
@@ -90,87 +110,268 @@ def _warm():
         trufor._model()  # ~8 s; so the first "TruFor" click in a demo is instant
 
 
+def _live_lines() -> list[dict]:
+    """Live history log, tolerant of a torn last line; later duplicates of an app_id are ignored."""
+    out, seen = [], set()
+    if not LIVE_HISTORY.exists():
+        return out
+    for line in LIVE_HISTORY.read_text().splitlines():
+        try:
+            r = json.loads(line)
+            aid = r["app"]["app_id"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            continue
+        if aid not in seen:
+            seen.add(aid); out.append(r)
+    return out
+
+
 def load_history() -> History:
-    """Replay seeded applications (time order) so live applicants are linked against them."""
+    """Replay seeded applications (time order) then live ones so new applicants are linked against them."""
     h = History(reuse_threshold())
     p = GEN / "population.json"
-    if not p.exists():
-        return h
-    for a in json.loads(p.read_text()):
-        ext = PRE / "extract" / f"{a['app_id']}.pkl"
-        emb = None
-        if ext.exists():
-            s = pickle.loads(ext.read_bytes())["bio"]["selfie"]
-            emb = s["emb"] if s else None
-        h.add(History.record(a, emb))
-    if LIVE_HISTORY.exists():
-        for line in LIVE_HISTORY.read_text().splitlines():
-            r = json.loads(line)
-            h.add(History.record(r["app"], None if r["emb"] is None else np.asarray(r["emb"], np.float32)))
+    seen = set()
+    if p.exists():
+        for a in json.loads(p.read_text()):
+            ext = PRE / "extract" / f"{a['app_id']}.pkl"
+            emb = media = None
+            if ext.exists():
+                b = pickle.loads(ext.read_bytes())["bio"]
+                emb = b["selfie"]["emb"] if b["selfie"] else None
+                media = b["passive"].get("dhash")
+            h.add(History.record(a, emb, media)); seen.add(a["app_id"])
+    for r in _live_lines():
+        if r["app"]["app_id"] not in seen:
+            h.add(History.record(r["app"], None if r["emb"] is None else np.asarray(r["emb"], np.float32), r.get("media")))
     return h
 
 
+# ------------------------------------------------------------------ sessions & sign-in
+class Login(BaseModel):
+    key: str = Field(max_length=200)
+
+
+@app.post("/api/auth/login")
+def login(body: Login, request: Request):
+    if not S.key_ok(body.key):
+        raise HTTPException(401, "wrong analyst key")
+    token, _ = S.make_token("analyst", ANALYST_SESSION_TTL_S)
+    r = JSONResponse({"analyst": True})
+    r.set_cookie(S.ANALYST_COOKIE, token, **S.cookie_args(request, ANALYST_SESSION_TTL_S))
+    return r
+
+
+@app.post("/api/auth/logout")
+def logout():
+    r = JSONResponse({"analyst": False})
+    r.delete_cookie(S.ANALYST_COOKIE, path="/")
+    return r
+
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    return {"analyst": S.is_analyst(request), "demo_tools": ENABLE_DEMO_TOOLS}
+
+
+@app.post("/api/session")
+def applicant_session(request: Request):
+    r = JSONResponse({"consent_version": CONSENT_VERSION})
+    if not S.applicant_sid(request):
+        token, _ = S.make_token("applicant", S.APPLICANT_TTL_S)
+        r.set_cookie(S.APPLICANT_COOKIE, token, **S.cookie_args(request, S.APPLICANT_TTL_S))
+    return r
+
+
+@app.post("/api/liveness/challenge")
+def liveness_challenge(request: Request):
+    return liveness_sessions.issue(S.applicant_sid(request))
+
+
 # ------------------------------------------------------------------ applicant flow
-def _decode(b: bytes):
+class FormIn(BaseModel):
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+    name: str = Field(min_length=2, max_length=80)
+    dob: str = Field(pattern=r"^\d{2}/\d{2}/\d{4}$")
+    gender: str = Field(pattern=r"^[MF]$")
+    id_number: str = Field(pattern=r"^\d{12}$")
+    pan: str = Field(default="", max_length=10)
+    phone: str = Field(pattern=r"^\d{10}$")
+    email: str = Field(max_length=120, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    address: str = Field(default="", max_length=200)
+    pincode: str = Field(default="", max_length=6)
+
+
+class DeviceIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    device_id: str | None = Field(default=None, max_length=80)
+    user_agent: str = Field(default="", max_length=400)
+    camera_labels: list[str] = Field(default_factory=list, max_length=12)
+    active_camera: str | None = Field(default=None, max_length=120)
+
+
+class TelemetryIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    fill_time: float | None = None
+    iki_mean: float | None = None
+    iki_std: float | None = None
+    paste_fields: float | None = None
+    corrections: float | None = None
+    blur_count: float | None = None
+    mouse_entropy: float | None = None
+    keystroke_vec: list[float] | None = Field(default=None, max_length=32)
+
+
+class Consent(BaseModel):
+    accepted: bool
+    version: str
+
+
+class ApplyIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    form: FormIn
+    device: DeviceIn = Field(default_factory=DeviceIn)
+    telemetry: TelemetryIn = Field(default_factory=TelemetryIn)
+    consent: Consent
+    challenge_id: str | None = Field(default=None, max_length=64)
+
+
+class Job:
+    def __init__(self, app_id: str, session: str):
+        self.app_id, self.session, self.t = app_id, session, time.time()
+        self.events: list[dict] = []
+        self.done = False
+
+
+JOBS: dict[str, Job] = {}
+IDEMPOTENCY: dict[tuple[str, str], str] = {}
+_jobs_lock = threading.Lock()
+EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="kyc")  # InsightFace/EasyOCR are CPU-bound
+JOB_TTL_S = 1800
+
+
+def _active() -> int:
+    return sum(not j.done for j in JOBS.values())
+
+
+def _sweep_jobs():
+    now = time.time()
+    for k in [k for k, j in JOBS.items() if j.done and now - j.t > JOB_TTL_S]:
+        JOBS.pop(k, None)
+    for k in [k for k, v in IDEMPOTENCY.items() if v not in JOBS]:
+        IDEMPOTENCY.pop(k, None)
+
+
+async def _read_image(f: UploadFile, what: str) -> tuple[bytes, np.ndarray]:
+    raw = await f.read(MAX_UPLOAD_BYTES + 1)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"{what} is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
+    return raw, _decode(raw, what)
+
+
+def _decode(b: bytes, what: str = "image"):
+    try:
+        with Image.open(io.BytesIO(b)) as im:  # header only: refuse decompression bombs before decoding
+            w, h = im.size
+            fmt = im.format
+    except Exception:
+        raise HTTPException(400, f"{what} is not a readable image")
+    if fmt not in ("JPEG", "PNG", "WEBP") or w * h > MAX_IMAGE_PIXELS:
+        raise HTTPException(400, f"{what}: JPEG/PNG/WebP up to {MAX_IMAGE_PIXELS // 1_000_000} MP only")
     img = cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
-        raise HTTPException(400, "unreadable image")
+        raise HTTPException(400, f"{what} is not a readable image")
     return img
 
 
-def run_job(app_id: str, state: dict):
-    q = JOBS[app_id]
+def run_job(job: Job, state: dict):
     try:
         for upd in P.pipeline().stream(state, stream_mode="updates"):
             for node, u in upd.items():
-                q.put(P.jsonable(P.node_event(node, u or {})))
+                job.events.append(P.jsonable(P.node_event(node, u or {})))
     except Exception as e:  # surface pipeline errors to the progress UI instead of hanging it
-        q.put({"node": "error", "error": str(e)})
-    q.put(None)
+        job.events.append({"node": "error", "error": type(e).__name__})
+        import traceback; traceback.print_exc()
+    job.done, job.t = True, time.time()
 
 
 @app.post("/api/apply")
-async def apply(payload: str = Form(...), card: UploadFile = File(...), selfie: UploadFile = File(...),
-                frames: list[UploadFile] = File(default=[])):
-    """payload JSON: {form:{...}, device:{device_id, ip?, user_agent, camera_labels[]}, telemetry:{...},
-    liveness:{challenges[], passed, virtual_camera}}"""
-    data = json.loads(payload)
-    for k in ("name", "dob", "gender", "id_number", "phone", "email"):
-        if not data.get("form", {}).get(k):
-            raise HTTPException(422, f"form.{k} required")
+async def apply(request: Request, payload: str = Form(..., max_length=MAX_PAYLOAD_BYTES), card: UploadFile = File(...),
+                selfie: UploadFile = File(...), frames: list[UploadFile] = File(default=[])):
+    """payload JSON: ApplyIn. Liveness frames: [neutral, step1, step2] for the challenge named by challenge_id."""
+    sid = S.applicant_sid(request)
+    try:
+        data = ApplyIn.model_validate_json(payload)
+    except ValidationError as e:
+        raise HTTPException(422, [{"field": ".".join(map(str, x["loc"])), "msg": x["msg"]} for x in e.errors()][:10])
+    if not data.consent.accepted or data.consent.version != CONSENT_VERSION:
+        raise HTTPException(422, "consent to the current notice is required")
+    idem = (request.headers.get("idempotency-key") or "")[:64]
+    with _jobs_lock:
+        _sweep_jobs()
+        if idem and (sid, idem) in IDEMPOTENCY:
+            return {"app_id": IDEMPOTENCY[(sid, idem)], "replayed": True}
+        if _active() >= MAX_ACTIVE_JOBS:
+            return JSONResponse({"detail": "busy: too many checks running, retry shortly"}, status_code=503,
+                                headers={"Retry-After": "10"})
+    if len(frames) > MAX_FRAMES:
+        raise HTTPException(422, f"at most {MAX_FRAMES} liveness frames")
+    card_raw, card_img = await _read_image(card, "card")
+    selfie_raw, selfie_img = await _read_image(selfie, "selfie")
+    frame_imgs = [(await _read_image(f, "liveness frame"))[1] for f in frames]
+    challenge = None
+    if data.challenge_id:  # consumed exactly once, even if the frames turn out to be bad
+        c, st = liveness_sessions.consume(data.challenge_id, sid)
+        challenge = {"status": st, "sequence": c["sequence"] if c else []}
+
     app_id = "L" + uuid.uuid4().hex[:8].upper()
-    card_raw, selfie_raw = await card.read(), await selfie.read()
     (UPLOADS / f"{app_id}_card.jpg").write_bytes(card_raw)
     (UPLOADS / f"{app_id}_selfie.jpg").write_bytes(selfie_raw)
-    frame_imgs = [_decode(await f.read()) for f in frames]
-    tele = {"field_times": [], "fill_time": 60, "iki_mean": 180, "iki_std": 60, "paste_fields": 0, "corrections": 2,
-            "blur_count": 0, "mouse_entropy": 3.0, "keystroke_vec": [0.0] * 12} | data.get("telemetry", {})
-    a = {"app_id": app_id, "ts": datetime.now().isoformat(timespec="seconds"), "source": data.get("source", "live"),
-         "form": data["form"], "device": data.get("device", {}), "telemetry": tele,
-         "liveness": data.get("liveness", {"passed": False}),
+    device = data.device.model_dump() | {"ip": S.signal_ip(request)}  # never the client's claim about its own IP
+    a = {"app_id": app_id, "ts": datetime.now().isoformat(timespec="seconds"), "source": "live",
+         "form": data.form.model_dump(), "device": device,
+         "telemetry": {k: v for k, v in data.telemetry.model_dump().items() if v is not None},
+         "challenge": challenge, "consent": data.consent.model_dump() | {"ts": datetime.now().isoformat(timespec="seconds")},
+         "card_sha256": hashlib.sha256(card_raw).hexdigest(), "selfie_sha256": hashlib.sha256(selfie_raw).hexdigest(),
          "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg"}
-    JOBS[app_id] = queue.Queue()
-    state = {"app": a, "card_bgr": _decode(card_raw), "card_raw": card_raw, "selfie_bgr": _decode(selfie_raw),
+    job = Job(app_id, sid)
+    with _jobs_lock:
+        JOBS[app_id] = job
+        if idem:
+            IDEMPOTENCY[(sid, idem)] = app_id
+    state = {"app": a, "card_bgr": card_img, "card_raw": card_raw, "selfie_bgr": selfie_img, "selfie_raw": selfie_raw,
              "frames": frame_imgs}
-    threading.Thread(target=run_job, args=(app_id, state), daemon=True).start()
+    EXECUTOR.submit(run_job, job, state)
     return {"app_id": app_id}
 
 
-@app.get("/api/apply/{app_id}/events")
-async def events(app_id: str):
-    q = JOBS.get(app_id)
-    if q is None:
-        raise HTTPException(404, "unknown job")
+def _own_job(request: Request, app_id: str) -> Job:
+    j = JOBS.get(app_id)
+    if j is None or j.session != S.applicant_sid(request):
+        raise HTTPException(404, "unknown application")  # same answer for "not yours" and "not there"
+    return j
 
-    async def gen():
-        while True:
-            ev = await asyncio.to_thread(q.get)
-            if ev is None:
-                yield {"event": "done", "data": json.dumps({"app_id": app_id})}
-                JOBS.pop(app_id, None)
-                return
-            yield {"event": "node", "data": json.dumps(ev)}
-    return EventSourceResponse(gen())
+
+@app.get("/api/apply/{app_id}/events")
+def events(app_id: str, request: Request, after: int = 0):
+    """Progress by polling (works through any proxy, unlike an event stream)."""
+    j = _own_job(request, app_id)
+    after = max(0, after)
+    return {"events": j.events[after:], "next": len(j.events), "done": j.done}
+
+
+@app.get("/api/apply/{app_id}/result")
+def result(app_id: str, request: Request):
+    """What the applicant may see: outcome, which checks are pending, and plain-language reasons. No scores."""
+    j = _own_job(request, app_id)
+    if not j.done:
+        return {"app_id": app_id, "done": False}
+    with db.session() as s:
+        r = s.get(db.Application, app_id)
+    if r is None:
+        return {"app_id": app_id, "done": True, "error": True}
+    reasons = sorted({x["code"] for m in r.modules for x in m.get("reasons", []) if x.get("weight", 0) > 0})
+    return {"app_id": app_id, "done": True, "band": r.band, "reasons": reasons,
+            "evidence": [{k: e[k] for k in ("check", "label", "status", "required")} for e in r.evidence]}
 
 
 # ------------------------------------------------------------------ analyst console
@@ -218,29 +419,52 @@ def get_app(app_id: str):
             raise HTTPException(404)
         audit = s.exec(db.select(db.AuditLog).where(db.AuditLog.app_id == app_id).order_by(db.AuditLog.ts)).all()
         out = _row(r, full=True)
+        out["rule_texts"] = {c: code_text(c) for c in r.rule_codes or []}
         out["audit"] = [P.jsonable(a.model_dump()) for a in audit]
     return out
 
 
 class Override(BaseModel):
     status: str  # approved | rejected | open
-    note: str = ""
-    actor: str = "analyst"
+    note: str = Field(default="", max_length=1000)
 
 
 @app.post("/api/apps/{app_id}/override")
-def override(app_id: str, o: Override):
+def override(app_id: str, o: Override, request: Request):
+    """Analyst disposition. Kept separate from the automated band, which is never edited."""
     if o.status not in ("approved", "rejected", "open"):
         raise HTTPException(422, "bad status")
     with db.session() as s:
         r = s.get(db.Application, app_id)
         if not r:
             raise HTTPException(404)
+        against = (o.status == "approved" and r.band != "APPROVE") or (o.status == "rejected" and r.band == "APPROVE")
+        if o.status != "open" and len(o.note.strip()) < (20 if against else 5):
+            raise HTTPException(422, "write a reason (at least 20 characters when you go against the automated decision)")
+        actor, prev = S.analyst_actor(request), r.status
+        if o.status == "approved" and r.band == "REJECT":
+            # four-eyes rule: approving what the system rejected needs a second analyst (the insider-collusion path).
+            # shortcut: analysts are told apart by sign-in session, not named accounts; add real accounts for production.
+            asks = s.exec(db.select(db.AuditLog).where(db.AuditLog.app_id == app_id,
+                                                        db.AuditLog.action == "override-request:approved")).all()
+            if not asks or r.status != "pending_second_approval":
+                r.status = "pending_second_approval"
+                s.add(r); s.commit()
+                db.audit(s, app_id, "override-request:approved", o.note.strip(), actor)
+                return {"ok": True, "against_automated": True, "pending_second_approval": True}
+            if any(a.actor == actor for a in asks):
+                raise HTTPException(409, "a different analyst must confirm this approval")
         r.status = o.status
         s.add(r)
-        db.audit(s, app_id, f"override:{o.status}", o.note, o.actor)
         s.commit()
-    return {"ok": True}
+        flag = " [against automated " + r.band + "]" if against else ""
+        db.audit(s, app_id, f"override:{prev}->{o.status}{flag}", o.note.strip(), actor)
+    return {"ok": True, "against_automated": against}
+
+
+@app.get("/api/audit/verify")
+def audit_verify():
+    return db.verify_audit()
 
 
 def _card_image(app_id: str):
@@ -256,20 +480,20 @@ def _card_image(app_id: str):
 
 
 @app.delete("/api/apps/{app_id}")
-def erase(app_id: str):
+def erase(app_id: str, request: Request):
     """Right to erasure (DPDP Act 2023): delete the application, its images and its graph record; keep an audit stub."""
     with db.session() as s:
         r = s.get(db.Application, app_id)
         if not r:
             raise HTTPException(404)
         s.delete(r)
-        db.audit(s, app_id, "erased", "applicant data deleted on request", "analyst")
         s.commit()
+    db.audit(None, app_id, "erased", "applicant data deleted on request", S.analyst_actor(request))
     for f in UPLOADS.glob(f"{app_id}_*"):
         f.unlink()
-    if LIVE_HISTORY.exists():  # in-memory graph forgets it at the next restart
-        keep = [l for l in LIVE_HISTORY.read_text().splitlines() if json.loads(l)["app"]["app_id"] != app_id]
-        LIVE_HISTORY.write_text("".join(l + "\n" for l in keep))
+    with P.Runtime.lock:  # in-memory graph forgets it at the next restart
+        keep = [r for r in _live_lines() if r["app"]["app_id"] != app_id]
+        LIVE_HISTORY.write_text("".join(json.dumps(r) + "\n" for r in keep))
     return {"erased": app_id}
 
 
@@ -351,9 +575,19 @@ def _json(name):
     return json.loads(p.read_text())
 
 
+PUBLIC_METRICS = ("definition", "n_test", "n_fraud", "precision", "recall_fdr", "f1", "fpr", "roc_auc", "pr_auc", "ci95",
+                  "ranking_metrics_on", "decision_metrics_on", "held_by_evidence")
+
+
 @app.get("/api/metrics")
-def metrics():
-    return {"metrics": _json("metrics.json"), "ablation": _json("ablation.json")}
+def metrics(request: Request):
+    """Analysts get everything; the public landing page gets headline numbers and how they were measured."""
+    m = _json("metrics.json")
+    man = json.loads((PRE.parent / "models" / "manifest.json").read_text()) if (PRE.parent / "models" / "manifest.json").exists() else {}
+    prov = {k: man.get(k) for k in ("policy_version", "feature_schema_version", "git_commit", "evaluation_kind", "split")}
+    if not S.is_analyst(request):
+        return {"metrics": {k: m[k] for k in PUBLIC_METRICS if k in m}, "provenance": prov}
+    return {"metrics": m, "ablation": _json("ablation.json"), "provenance": prov}
 
 
 @app.get("/api/attacks")
@@ -397,8 +631,9 @@ def attack_live(req: LiveAttack):
     ok, enc = cv2.imencode(".jpg", after_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
     from app.modules.document import trufor
     tf = trufor.available()
-    pick = lambda r, img: {"risk": r.risk, "reasons": [x.code for x in r.reasons], "forensic": r.features["doc_forensic"],
-                           "qr_valid": r.evidence["qr_signature_valid"], "ocr": r.evidence["ocr"], "qr": r.evidence["qr"],
+    pick = lambda r, img: {"risk": r.risk, "reasons": [x.model_dump() for x in r.reasons], "forensic": r.features["doc_forensic"],
+                           "qr_valid": r.evidence["qr_signature_valid"], "qr_status": r.evidence.get("qr_status"),
+                           "ocr": r.evidence["ocr"], "qr": r.evidence["qr"],
                            "trufor": trufor.analyze(doc.normalize(img)) if tf else None}
     return P.jsonable({"before": pick(before, card), "after": pick(after, after_img), "truth": a["fraud_type"],
                        "image": "data:image/jpeg;base64," + base64.b64encode(enc.tobytes()).decode()})
@@ -416,7 +651,8 @@ def chat(q: Ask):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "history": len(P.Runtime.hist.apps) if P.Runtime.hist else 0}
+    from app.fusion import model
+    return {"ok": True, "model": "unavailable" if model.load() is None else ("stale" if model.stale() else "ok")}
 
 
 # ------------------------------------------------------------------ demo: ring simulator + presenter kit
@@ -433,13 +669,12 @@ def ring_sim():
         a["ts"] = (base + timedelta(minutes=j)).isoformat(timespec="seconds")
         a["source"] = "ring_sim"
         a["card_path"], a["selfie_path"] = k["card_path"], k["selfie_path"]
+        a.pop("liveness", None)  # injected without a camera: liveness is honestly NOT_PROVIDED
         raw = (GEN / k["card_path"]).read_bytes()
         state = {"app": a, "card_bgr": _decode(raw), "card_raw": raw,
                  "selfie_bgr": cv2.imread(str(GEN / k["selfie_path"])), "frames": []}
-        JOBS[a["app_id"]] = queue.Queue()
         ids.append(a["app_id"])
-        run_job(a["app_id"], state)  # sequential so each member sees the previous ones
-        JOBS.pop(a["app_id"], None)
+        run_job(Job(a["app_id"], "ring-sim"), state)  # sequential so each member sees the previous ones
     return {"app_ids": ids}
 
 
@@ -453,4 +688,4 @@ def testkit():
 @app.post("/api/demo/kit")
 async def demo_kit(photo: UploadFile = File(...)):
     from app.demo_kit import build_kit
-    return build_kit(_decode(await photo.read()))
+    return build_kit((await _read_image(photo, "photo"))[1])

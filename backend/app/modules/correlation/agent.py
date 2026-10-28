@@ -1,6 +1,8 @@
 """Correlation agent (D1): specificity-weighted identity graph, rings, family exception."""
 import time
 
+import numpy as np
+
 from app.schemas import ModuleResult, reason
 
 
@@ -21,6 +23,8 @@ def assess(rec: dict, hist, commit: bool = True) -> ModuleResult:
     f["cor_address_names"] = float(hist.shared_names("address", a["address"], rec["name"]))
     f["cor_id_names"] = float(hist.shared_names("id_hash", a["id_hash"], rec["name"]))
     f["cor_ip_names"] = float(hist.shared_names("ip", a["ip"], rec["name"]))
+    # computed before this record is added, so it counts OTHER people only
+    f["cor_device_people_7d"] = float(hist.device_people(a["device"], rec["ts"], rec["name"])) if a["device"] else np.nan
 
     if commit:
         i = hist.add(rec, edges)
@@ -48,6 +52,8 @@ def assess(rec: dict, hist, commit: bool = True) -> ModuleResult:
         R.append(reason("COR_SHARED_DEVICE", 0.2))
     if f["cor_phone_names"] > 0 and not family:
         R.append(reason("COR_SHARED_PHONE", 0.15))
+    if f["cor_device_people_7d"] >= 2:
+        R.append(reason("COR_MULE_HERDING", 0.3))
     if f["cor_id_names"] > 0:
         R.append(reason("COR_SHARED_ID", 0.45))
     if family:

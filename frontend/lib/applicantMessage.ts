@@ -8,12 +8,17 @@ export function applicantMessage(band: string | undefined, codes: string[]): App
     return { title: "You're verified", body: "Your identity has been confirmed. You can continue to your account." };
   }
   if (band === "REVIEW") {
-    if (codes.includes("IMG_QUALITY_LOW")) {
+    if (codes.includes("IMG_QUALITY_LOW") || codes.includes("EV_CAPTURE_QUALITY_FAIL")) {
       return { title: "Your photos weren't clear enough",
         body: "Please retake them in good light, holding the card flat and the camera steady.",
         action: { label: "Retake photos", href: "/kyc" } };
     }
-    if (codes.includes("BIO_LIVENESS_FAIL")) {
+    if (codes.includes("EV_LIVENESS_NOT_PROVIDED")) {
+      return { title: "We need a quick live face check",
+        body: "An uploaded photo can't show us it's really you right now. Please do the short face check with your camera, or wait and a member of our team will review your application.",
+        action: { label: "Do the face check", href: "/kyc" } };
+    }
+    if (codes.includes("BIO_LIVENESS_FAIL") || codes.includes("EV_LIVENESS_FAIL") || codes.includes("EV_LIVENESS_UNAVAILABLE")) {
       return { title: "We couldn't complete the face check",
         body: "Please try again in good light, facing the camera, with only you in the frame. It takes under a minute.",
         action: { label: "Retake face check", href: "/kyc" } };
