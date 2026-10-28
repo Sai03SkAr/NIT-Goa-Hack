@@ -7,3 +7,5 @@ next-env.d.ts
 .DS_Store
 # copied from node_modules + ../../frontend by scripts/copy-mediapipe.mjs
 /public/mediapipe/
+# demo-mode application store (lib/trueid-local.ts)
+.trueid-local.json

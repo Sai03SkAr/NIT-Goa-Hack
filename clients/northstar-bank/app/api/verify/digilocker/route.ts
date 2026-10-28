@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   const id = String(id_number ?? "").replace(/\s/g, "");
   if (!/^\d{12}$/.test(id)) return NextResponse.json({ ok: false, error: "Enter your 12-digit national ID number." });
   if (!/^\d{6}$/.test(String(otp ?? ""))) return NextResponse.json({ ok: false, error: "Enter the 6-digit OTP." });
-  const rec = await registry<Uid>(`/uidai/${id}`);
+  const rec = await registry<Uid>("uidai", id);
   if (!rec) return NextResponse.json({ ok: false, error: "DigiLocker couldn't find this ID number." });
   if (pan_last4 && id.slice(-4) !== pan_last4)
     return NextResponse.json({ ok: false, error: "This ID isn't the one linked to your PAN." });

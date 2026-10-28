@@ -29,30 +29,44 @@ auto-approves its applicants: a clean one comes back `REVIEW` / "Verification in
 
 ## Run
 
-```bash
-# 1. TrueID backend (see the main README for the first-time build)
-./scripts/run_backend.sh                      # http://localhost:8000
+**Windows:** double-click `clients/start.cmd`. **macOS / Linux:** `./clients/start.sh`.
+It installs both sites the first time, starts them, and opens:
 
-# 2. Each partner site, in its own terminal
-cd clients/northstar-bank && npm install && npm run dev    # http://localhost:3001
-cd clients/paylite-wallet && npm install && npm run dev    # http://localhost:3002
-```
-
-Optional: copy `.env.example` to `.env.local` in each site to change the backend URL, partner key or ops passcode.
-Northstar copies the MediaPipe files it needs into `public/mediapipe/` on `npm run dev`. The wasm comes from its own
-node_modules and the face model from `frontend/public/mediapipe/`.
-
-| Page | Northstar | PayLite |
+| Page | Northstar Bank | PayLite Wallet |
 |---|---|---|
-| Customer home | `/` | `/` |
+| Customer site | http://localhost:3001 | http://localhost:3002 |
 | Onboarding | `/onboard` | `/start` |
 | Operations console | `/ops` (passcode `northstar-ops`) | `/ops` (passcode `paylite-ops`) |
 
-OTPs are simulated: the code appears on screen as a "demo message". PAN and DigiLocker lookups are answered by TrueID's mock
-registries, so use identities from the test kit or the presenter kit (`/kyc?demo=1` on the main frontend). The kit's
-"Use card" values work in both sites.
+You need Node.js (LTS). Nothing else is required to try the screens.
 
-### Demo script
+### Demo mode and connected mode
+
+Both sites talk to TrueID through one file, `lib/trueid.ts`. Set `TRUEID_MODE` in `.env.local` (copy `.env.example`):
+
+| `TRUEID_MODE` | What answers | Use it for |
+|---|---|---|
+| `auto` (default) | The TrueID backend when it's running on `TRUEID_API_URL`, otherwise demo mode | Everyday use: start the backend and the sites switch over within 5 seconds |
+| `remote` | Always the TrueID backend; errors if it's down | Final demos, so a stopped backend can't silently fall back |
+| `local` | Always the built-in demo engine (`lib/trueid-local.ts`) | Working on the screens without the Python backend |
+
+The ops console says which one is live ("Connected to TrueID Shield at …" or "Demo mode").
+
+**Demo mode** answers the PAN and DigiLocker lookups from four test identities. Press **Test data** on the onboarding page to see them.
+Verdicts come from a few plain rules: registry mismatch, the same ID under two names, phone and device reuse, fill speed,
+paste-heavy or robotic typing, virtual camera, and missing liveness. It does not look at images. It returns exactly the same
+JSON as the real partner API, so nothing else changes when you connect the backend.
+
+**Connected mode** uses the full pipeline. Start the backend (`./scripts/run_backend.sh`) and leave `TRUEID_MODE=auto`.
+PAN and DigiLocker then come from TrueID's mock registries, so use identities from the test kit or the presenter kit
+(`/kyc?demo=1` on the main frontend). A different machine or port only needs `TRUEID_API_URL`.
+
+Northstar copies the MediaPipe files it needs into `public/mediapipe/` on `npm run dev`. The wasm comes from its own
+node_modules and the face model from `frontend/public/mediapipe/`.
+
+### Demo script (connected mode, with the presenter kit)
+OTPs are simulated in both modes: the code appears on screen as a demo message.
+
 1. **PayLite, genuine:** upload the genuine card and a photo → wallet ready with limits; the ops console shows "Verification incomplete".
 2. **PayLite, hero DOB edit:** type the edited DOB and upload the Poisson-edited card → TrueID rejects it: the signed QR disagrees with the printed DOB.
 3. **PayLite, Frankenstein:** stolen identity with your face → TrueID flags face reuse and a registry face mismatch.

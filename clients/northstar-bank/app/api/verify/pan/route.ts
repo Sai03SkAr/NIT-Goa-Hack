@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   const { pan, dob } = await req.json();
   const p = String(pan ?? "").toUpperCase().trim();
   if (!PAN_RE.test(p)) return NextResponse.json({ ok: false, error: "Enter a valid individual PAN, like ABCPK1234Z." });
-  const rec = await registry<Pan>(`/pan/${p}`);
+  const rec = await registry<Pan>("pan", p);
   if (!rec) return NextResponse.json({ ok: false, error: "This PAN isn't in the Income Tax records. Check it and try again." });
   if (rec.dob !== dob) return NextResponse.json({ ok: false, error: "Date of birth doesn't match the PAN records." });
   return NextResponse.json({ ok: true, name: rec.name, id_last4: rec.id_last4 });

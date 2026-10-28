@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { ArrowLeft, ImagePlus, Loader2, MessageSquareText } from "lucide-react";
 import { Logo } from "@/components/Brand";
+import { DemoIdentities } from "@/components/DemoIdentities";
 import { deviceId } from "@/lib/device";
 import { Telemetry } from "@/lib/telemetry";
 
@@ -56,7 +57,8 @@ export default function Start() {
           {TITLES.map((t, i) => <span key={t} className={clsx("h-1.5 rounded-full transition-all", i === step ? "w-7 bg-plum" : i < step ? "w-3 bg-plum/60" : "w-3 bg-line")} />)}
         </div>
       </header>
-      <main className="mt-8 flex flex-1 flex-col">
+      <div className="mt-4"><DemoIdentities /></div>
+      <main className="mt-4 flex flex-1 flex-col">
         {step === 0 && <PhoneStep phone={phone} setPhone={setPhone} tel={tel} onDone={() => setStep(1)} />}
         {step === 1 && <AboutStep form={form} setForm={setForm} tel={tel} onDone={() => setStep(2)} />}
         {step === 2 && <DocsStep card={card} setCard={setCard} selfie={selfie} setSelfie={setSelfie} onSubmit={submit} />}

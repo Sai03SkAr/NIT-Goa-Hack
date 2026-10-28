@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { trueid } from "@/lib/trueid";
+import { listApplications } from "@/lib/trueid";
 
 export async function GET() {
   try {
-    const r = await trueid("/api/partner/v1/applications?limit=100");
-    return NextResponse.json(await r.json(), { status: r.status });
+    const r = await listApplications();
+    return NextResponse.json(r.body, { status: r.status });
   } catch {
-    return NextResponse.json({ error: "TrueID backend is offline (port 8000)." }, { status: 503 });
+    return NextResponse.json({ error: "TrueID backend is offline. Start it, or set TRUEID_MODE=local." }, { status: 503 });
   }
 }

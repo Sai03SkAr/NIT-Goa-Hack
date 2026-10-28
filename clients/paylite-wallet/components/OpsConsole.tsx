@@ -53,6 +53,7 @@ function Risk({ v }: { v?: number }) {
 
 export function OpsConsole({ brand, profileNote }: { brand: React.ReactNode; profileNote: string }) {
   const [apps, setApps] = useState<App[] | null>(null);
+  const [conn, setConn] = useState<{ mode?: string; backend?: string }>({});
   const [err, setErr] = useState("");
   const [sel, setSel] = useState<string | null>(null);
 
@@ -64,7 +65,7 @@ export function OpsConsole({ brand, profileNote }: { brand: React.ReactNode; pro
         const j = await r.json();
         if (stop) return;
         if (!r.ok) setErr(j.error ?? j.detail ?? "Couldn't load applications");
-        else { setErr(""); setApps(j.applications); }
+        else { setErr(""); setApps(j.applications); setConn({ mode: j.mode, backend: j.backend }); }
       } catch { if (!stop) setErr("Couldn't reach this site's server."); }
       if (!stop) setTimeout(load, 3000);
     };
@@ -99,6 +100,13 @@ export function OpsConsole({ brand, profileNote }: { brand: React.ReactNode; pro
             </p>
           )}
         </div>
+        {conn.mode && (
+          <p className={clsx("mt-4 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm",
+            conn.mode === "remote" ? "border-ok/40 text-ok" : "border-warn/40 text-warn")}>
+            <span className={clsx("size-2 rounded-full", conn.mode === "remote" ? "bg-ok" : "bg-warn")} />
+            {conn.mode === "remote" ? `Connected to TrueID Shield at ${conn.backend}` : "Demo mode: TrueID backend not running, verdicts are samples from simple rules"}
+          </p>
+        )}
         {err && <p role="alert" className="error mt-4">{err}</p>}
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_26rem]">

@@ -8,6 +8,7 @@ import { DemoSms, OtpInput, useOtp } from "@/components/Otp";
 import { DocCapture } from "@/components/DocCapture";
 import { LiveSelfie, type LiveResult } from "@/components/LiveSelfie";
 import { SignaturePad } from "@/components/SignaturePad";
+import { DemoIdentities } from "@/components/DemoIdentities";
 import { deviceId } from "@/lib/device";
 import { Telemetry } from "@/lib/telemetry";
 
@@ -93,6 +94,7 @@ export default function Onboard() {
             <div className="h-full rounded-full bg-spruce transition-[width]" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
           </div>
         </div>
+        <div className="mb-4"><DemoIdentities /></div>
         <div className="grid gap-8 md:grid-cols-[17rem_1fr] lg:gap-12">
           <VerificationRecord step={step} record={record} />
           <main className="card step-enter min-w-0 p-6 sm:p-8" key={step}>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { trueid } from "@/lib/trueid";
+import { getApplication } from "@/lib/trueid";
 
 /** What the APPLICANT may see: a customer-facing state, never the fraud score or reasons.
  * PayLite policy: TrueID's "verification incomplete" (no fraud pattern, but no liveness) still opens a
@@ -7,9 +7,8 @@ import { trueid } from "@/lib/trueid";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const r = await trueid(`/api/partner/v1/applications/${encodeURIComponent(id)}`);
-    if (!r.ok) return NextResponse.json({ state: "unknown" }, { status: r.status });
-    const v = await r.json();
+    const { status, body: v } = await getApplication(id);
+    if (status !== 200) return NextResponse.json({ state: "unknown" }, { status });
     let state = "checking";
     if (v.status === "error") state = "review";
     else if (v.status === "completed")
