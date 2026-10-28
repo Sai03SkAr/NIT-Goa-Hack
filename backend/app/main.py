@@ -226,12 +226,21 @@ class Consent(BaseModel):
     version: str
 
 
+class Geo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy: float | None = None   # metres
+    ts: str | None = None
+
+
 class ApplyIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
     form: FormIn
     device: DeviceIn = Field(default_factory=DeviceIn)
     telemetry: TelemetryIn = Field(default_factory=TelemetryIn)
     consent: Consent
+    geo: Geo | None = None           # RBI V-CIP geo-tag; null if the applicant declines location
     challenge_id: str | None = Field(default=None, max_length=64)
 
 
@@ -327,10 +336,11 @@ async def apply(request: Request, payload: str = Form(..., max_length=MAX_PAYLOA
     (UPLOADS / f"{app_id}_card.jpg").write_bytes(card_raw)
     (UPLOADS / f"{app_id}_selfie.jpg").write_bytes(selfie_raw)
     device = data.device.model_dump() | {"ip": S.signal_ip(request)}  # never the client's claim about its own IP
+    geo = data.geo.model_dump() if data.geo else None
     a = {"app_id": app_id, "ts": datetime.now().isoformat(timespec="seconds"), "source": "live",
          "form": data.form.model_dump(), "device": device,
          "telemetry": {k: v for k, v in data.telemetry.model_dump().items() if v is not None},
-         "challenge": challenge, "consent": data.consent.model_dump() | {"ts": datetime.now().isoformat(timespec="seconds")},
+         "challenge": challenge, "consent": data.consent.model_dump() | {"ts": datetime.now().isoformat(timespec="seconds")}, "geo": geo,
          "card_sha256": hashlib.sha256(card_raw).hexdigest(), "selfie_sha256": hashlib.sha256(selfie_raw).hexdigest(),
          "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg"}
     job = Job(app_id, sid)

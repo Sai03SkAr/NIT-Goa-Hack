@@ -30,7 +30,9 @@ REQUIRED = {
     "media_integrity": ("Photos are new and carry no AI-generator marker", "server"),
     "device_network": ("Device has not onboarded several other people this week", "server"),
 }
-INFORMATIONAL = {"voice": ("Voice step-up", "simulated")}
+INFORMATIONAL = {"voice": ("Voice step-up", "simulated"),
+                 "location": ("GPS location captured for the session (RBI V-CIP geo-tag)", "client-reported"),
+                 "ip_region": ("Applicant network location", "server")}
 
 
 def status(feats: dict, check: str) -> str:
@@ -126,9 +128,20 @@ def decide(feats: dict, model_result: dict, bands=None) -> dict:
             "policy_version": POLICY_VERSION}
 
 
+def context_codes(app: dict) -> dict:
+    """Evidence codes for the session context. Informational: recorded and shown, never gating (we cannot validate
+    a self-reported GPS fix, and on localhost there is no public IP to geolocate).
+    shortcut: production plugs an India/allow-list geoIP here to enforce RBI's non-India/spoofed-IP block."""
+    geo = app.get("geo")
+    loc = PASS if (geo and finite(geo.get("accuracy"))) else NOT_PROVIDED
+    region = PASS if app.get("device", {}).get("ip") else UNAVAILABLE  # loopback / behind the dev proxy: cannot geolocate
+    return {"ev_location": CODE[loc], "ev_ip_region": CODE[region]}
+
+
 def evidence_list(feats: dict) -> list[dict]:
     """For the UI: every check with its status and where the evidence came from."""
     feats = derive(feats)
     out = [{"check": c, "label": d, "source": src, "status": status(feats, c), "required": True} for c, (d, src) in REQUIRED.items()]
-    out += [{"check": c, "label": d, "source": src, "status": SIMULATED, "required": False} for c, (d, src) in INFORMATIONAL.items()]
+    out += [{"check": c, "label": d, "source": src, "status": status(feats, c) if f"ev_{c}" in feats else SIMULATED,
+             "required": False} for c, (d, src) in INFORMATIONAL.items()]
     return out

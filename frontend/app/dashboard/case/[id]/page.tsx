@@ -69,6 +69,8 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
         <ShapPanel shap={c.shap} />
       </div>
 
+      <SessionContext c={c} />
+
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <Section title="Analyst summary" right={<span className="chip"><Sparkles className="size-3" />written only from the findings above</span>}>
           <p className="text-sm leading-relaxed text-fg">{readable(c.summary)}</p>
@@ -291,6 +293,35 @@ function OverridePanel({ c, onDone }: { c: CaseDetail; onDone: () => void }) {
         <span>Uploaded images are deleted automatically after the retention period.</span>
         <button className="text-reject underline-offset-2 hover:underline" onClick={erase}>Erase applicant data</button>
       </div>
+    </Section>
+  );
+}
+
+function SessionContext({ c }: { c: CaseDetail }) {
+  const x = c.context;
+  if (!x) return null;
+  const g = x.geo;
+  const map = g ? "https://www.openstreetmap.org/?mlat=" + g.lat + "&mlon=" + g.lng + "#map=16/" + g.lat + "/" + g.lng : null;
+  const geoText = g ? g.lat.toFixed(5) + ", " + g.lng.toFixed(5) + (g.accuracy != null ? " (±" + g.accuracy + " m)" : "") : "";
+  return (
+    <Section title="Session context" right={<span className="text-xs text-dim">captured per RBI V-CIP, recorded not scored</span>}>
+      <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-3">
+        <div>
+          <dt className="text-dim">Geo-tag (GPS)</dt>
+          <dd className="mt-0.5">
+            {g ? <span>{geoText} {map ? <a href={map} target="_blank" className="text-brand hover:underline">map</a> : null}</span>
+               : <span className="text-review">not provided</span>}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-dim">Network (IP)</dt>
+          <dd className="mt-0.5">{x.ip ? x.ip : <span className="text-dim">local / behind proxy (cannot geolocate)</span>}</dd>
+        </div>
+        <div>
+          <dt className="text-dim">Consent</dt>
+          <dd className="mt-0.5">{x.consent && x.consent.version ? "accepted (" + x.consent.version + ")" : <span className="text-dim">n/a</span>}</dd>
+        </div>
+      </dl>
     </Section>
   );
 }

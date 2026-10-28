@@ -49,9 +49,16 @@ integrity (photo not seen before, no AI-generator marker), device network (no mu
 simulated and shown only.
 
 **Liveness protocol.** The server issues a challenge (turn left / turn right in random order) bound to the applicant's
-session, valid once for 3 minutes. The browser returns a neutral frame plus one frame per step. The server checks
-exactly one face per frame, that every frame is the selfie's person (1:1 threshold), that frames are not copies,
-and the turn direction from facial landmarks. An uploaded selfie is NOT_PROVIDED and always goes to a person.
+session, valid once for 3 minutes. The browser captures a short **video burst** through the challenge and the server
+checks it is one live person: one face per frame all matching the selfie, and a **continuous head-turn** performing the
+requested sequence. A few still photos jump straight to the turned pose with nothing in between, so they fail with
+`BIO_NO_MOTION`; an uploaded selfie is NOT_PROVIDED. Both go to a person, never auto-approve. This defeats still-photo
+spoofing but not a full video replay of the victim: production needs certified presentation-attack detection
+(ISO/IEC 30107-3) or a native app with device attestation. See [docs/VCIP_ALIGNMENT.md](docs/VCIP_ALIGNMENT.md).
+
+**RBI V-CIP extras.** With consent the browser records a GPS geo-tag and the session's network IP; both are shown on
+the case page and kept as informational evidence (recorded, never scored: a self-reported fix can't be trusted, and on
+localhost there is no public IP to geolocate).
 
 Real-world fraud methods from 2024 to 2026 and how each is handled: **[docs/THREATS_2024_2026.md](docs/THREATS_2024_2026.md)**.
 

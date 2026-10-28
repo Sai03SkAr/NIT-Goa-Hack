@@ -148,12 +148,15 @@ def persist_node(s: State):
                              "emb": None if emb is None else [float(x) for x in emb],
                              "media": s["modules"]["biometric"].get("_media")}) + "\n")
     with db.session() as ses:
+        ctx = {"geo": a.get("geo"), "ip": a.get("device", {}).get("ip"), "consent": a.get("consent"),
+               "ts": a.get("ts")}
+        feats_ev = {**s["feats"], **policy.context_codes(a)}
         ses.merge(db.Application(
             app_id=a["app_id"], ts=a["ts"], source=a.get("source", "live"),
             name=a["form"]["name"], id_last4=a["form"]["id_number"][-4:], form_masked=db.mask_form(a["form"]),
             prob=d["prob"], band=d["band"], forced=d.get("forced"), rule_codes=d.get("rule_codes", []),
-            evidence=policy.evidence_list(s["feats"]), model_status=d.get("model_status", ""),
-            policy_version=d.get("policy_version", ""), step_up=s.get("step_up") or {},
+            evidence=policy.evidence_list(feats_ev), model_status=d.get("model_status", ""),
+            policy_version=d.get("policy_version", ""), step_up=s.get("step_up") or {}, context=ctx,
             fraud_type=d["fraud_type"], fraud_label=d["fraud_label"], action=d["fraud_action"],
             modules=_public_modules(s), shap=d.get("shap", []), summary=s.get("summary", ""),
             stepped_up=bool(s.get("stepped_up")), card_path=a.get("card_path", ""), selfie_path=a.get("selfie_path", ""),

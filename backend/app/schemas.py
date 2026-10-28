@@ -34,6 +34,7 @@ REASONS: dict[str, str] = {
     "BIO_CHALLENGE_INVALID": "The liveness challenge was expired, reused or issued to another session",
     "BIO_CHALLENGE_FRAMES": "Wrong number of liveness frames for the challenge",
     "BIO_FRAMES_DUPLICATE": "Liveness frames are copies of one still image",
+    "BIO_NO_MOTION": "Liveness frames show no continuous head movement (looks like still photos, not a live turn)",
     "BIO_FRAME_FACE_COUNT": "A liveness frame shows no face or more than one face",
     "BIO_VOICE_LOW": "Voice check score low (simulated, never used in the decision)",
     # behavior

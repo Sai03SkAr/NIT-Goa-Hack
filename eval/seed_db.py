@@ -36,8 +36,9 @@ def main():
                 id_last4=a["form"]["id_number"][-4:], form_masked=db.mask_form(a["form"]), prob=d["prob"],
                 band=d["band"], forced=d["forced"], rule_codes=d["rule_codes"], fraud_type=ft, fraud_label=act["label"],
                 action=act["action"], modules=jsonable(mods), shap=d["shap"], summary=template(case),
-                evidence=policy.evidence_list(feats), model_status=d["model_status"], policy_version=d["policy_version"],
-                card_path=a["card_path"], selfie_path=a["selfie_path"], truth_label=a["label"], truth_type=a["fraud_type"]))
+                evidence=policy.evidence_list({**feats, **policy.context_codes(a)}), model_status=d["model_status"], policy_version=d["policy_version"],
+                card_path=a["card_path"], selfie_path=a["selfie_path"], truth_label=a["label"], truth_type=a["fraud_type"],
+                context={"ip": a["device"].get("ip"), "geo": None, "consent": None, "ts": a["ts"]}))
         s.commit()
     print("seeded", len(apps))
 

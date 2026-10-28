@@ -22,17 +22,16 @@ forgery and tampering, the hash-chained audit log, missing telemetry, AI-generat
 
 It signs in with the analyst key (`backend/.secrets/analyst_key`), builds a **fresh** test kit (people the system
 has never seen, enrolled in the mock registries), then for every scenario opens an applicant session, asks the server
-for a liveness challenge, answers it with **fixture photos of the same person** (frontal, turned and mirrored, in the
-order the server asked for), submits with consent and an idempotency key, and polls until the decision is saved.
-The server verifies those frames exactly like webcam frames; they are still photos, not a live camera, and the
-report says so.
+for a liveness challenge, answers it with **fixture still photos** of the same person, submits with consent and an idempotency key, and polls
+until the decision is saved. Those are stills, not a live camera, so they **cannot pass the live head-turn** motion
+check: genuine scripted cases land in REVIEW by design. APPROVE is only reachable on a real webcam (section 3).
 
 **Proper:** every line PASS. A report is written to `data/generated/testkit/<tag>/REPORT.md`.
 
 | Scenario | Expected | What must happen |
 |---|---|---|
-| 01 Genuine applicant | APPROVE | Every required check PASS, liveness PASS |
-| 02 Name written with an initial (`R. Kulkarni`) | APPROVE | Fuzzy Indian-name match accepts it |
+| 01 Genuine applicant | REVIEW | Everything matches, but scripted stills can't prove a live turn (`BIO_NO_MOTION` / `BIO_CHALLENGE_FRAMES`); only a webcam gives APPROVE |
+| 02 Name written with an initial (`R. Kulkarni`) | REVIEW | Fuzzy Indian-name match accepts it; REVIEW only for the same liveness reason |
 | 03 Head never turned (still frames) | REVIEW or REJECT | Liveness FAIL (`BIO_LIVENESS_FAIL`); never APPROVE |
 | 04 DOB edited on the card (hero attack) | REJECT | `DOC_QR_OCR_MISMATCH` |
 | 05 Counterfeit card (QR signed by a fake key) | REJECT | `DOC_QR_SIG_INVALID` |
@@ -43,11 +42,12 @@ report says so.
 | 10 Virtual camera reported | REVIEW or REJECT | `BIO_VIRTUAL_CAMERA`; a client-reported hint, so it blocks approval rather than proving fraud |
 | 11 Scripted bot, one still replayed as every frame | REJECT/REVIEW | `BEH_*` signals plus `BIO_FRAMES_DUPLICATE` |
 | 12 Ring members 1-3 | REJECT | Members 2-3 show `BEH_EMAIL_SEQUENCE`, `BEH_KEYSTROKE_LINK`, `BIO_FACE_REUSED` |
-| 13 Recruited account holders 1-3 (one phone) | APPROVE, APPROVE, REVIEW | Genuine people; the third shows `COR_MULE_HERDING`, pattern "Possible mule recruitment" |
+| 13 Recruited account holders 1-3 (one phone) | REVIEW x3 | The third shows `COR_MULE_HERDING`. All REVIEW on scripted stills; on a webcam members 1-2 are APPROVE |
 
 **Encrypted-QR people:** `.venv/bin/python scripts/run_tests.py --encrypted 10` builds 10 genuine people whose card
-QR is signed **and** AES-256-GCM encrypted (`TID3`), then runs them through the same flow. **Proper:** `10/10 passed`,
-all APPROVE. Scanning one of those cards with a phone shows only `TID3|...` ciphertext: no name, date or ID.
+QR is signed **and** AES-256-GCM encrypted (`TID3`), then runs them through the same flow. **Proper:** `10/10 passed`
+(each REVIEW: genuine, but scripted stills can't pass the live head-turn). Scanning one of those cards with a phone
+shows only `TID3|...` ciphertext: no name, date or ID.
 
 **Not proper:** any `FAIL` line. The worst failures are a genuine applicant (01/02) getting REJECT, or any fraud
 scenario getting APPROVE. Exit code 1 means at least one failed.
@@ -75,7 +75,8 @@ browser profile for a fresh device.
 ## 3. Live webcam test (the real demo path)
 
 1. Open `/kyc?demo=1` and upload a clear front-facing photo of **yourself** in the Presenter kit.
-2. **Genuine card:** type the values shown, turn your head in the order shown on screen, submit → **APPROVE**.
+2. **Genuine card:** type the values shown, then on the face step turn your head in the order shown (the browser
+   records a short burst). A smooth live turn → **APPROVE**. Holding a phone photo to the camera → REVIEW (`BIO_NO_MOTION`).
 3. **Hero DOB edit card:** DOB `14/03/1994` → **REJECT**, "Tampered document", `DOC_QR_OCR_MISMATCH`.
 4. **Frankenstein card:** victim's details → **REJECT**, `BIO_REGISTRY_FACE_MISMATCH` plus `BIO_FACE_REUSED`
    (your face already applied under your name in step 2).

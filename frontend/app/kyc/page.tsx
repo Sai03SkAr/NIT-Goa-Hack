@@ -41,7 +41,7 @@ function Wizard() {
       const payload = {
         form: { ...form, id_number: form.id_number.replace(/\D/g, ""), pan: form.pan.toUpperCase().trim() },
         device: { device_id: await deviceId(), user_agent: navigator.userAgent, camera_labels: cams, active_camera: active || null },
-        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion }, challenge_id: challengeId,
+        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion }, challenge_id: challengeId, geo: await getGeo(),
       };
       fd.append("payload", JSON.stringify(payload));
       fd.append("card", card!);
@@ -100,6 +100,7 @@ function Consent({ onNext }: { onNext: () => void }) {
         {["ID numbers are linked only through keyed hashes and shown masked (last 4 digits only).",
           "Your selfie and face-check frames are compared on our server with your card photo and the issuer's registry photo. Images are deleted after 30 days.",
           "We record how the form is filled (timing, not content) to detect bots and scripted fraud.",
+          "With your permission we record your location and network at the time of the check, as digital KYC rules require.",
           "An AI assistant may summarise the result for a human reviewer. It never makes the decision."].map((t) => (
           <li key={t} className="flex gap-3"><Check className="mt-0.5 size-4 shrink-0 text-brand" />{t}</li>
         ))}
@@ -159,6 +160,14 @@ function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form
       </div>
     </div>
   );
+}
+
+/** Live GPS fix for the RBI V-CIP geo-tag; null if the browser has no geolocation or the user declines. */
+async function getGeo(): Promise<Record<string, number | string> | null> {
+  if (!navigator.geolocation) return null;
+  return new Promise((res) => navigator.geolocation.getCurrentPosition(
+    (g) => res({ lat: g.coords.latitude, lng: g.coords.longitude, accuracy: Math.round(g.coords.accuracy), ts: new Date().toISOString() }),
+    () => res(null), { timeout: 2500, maximumAge: 60000 }));
 }
 
 /** 03082006 -> 03/08/2006 as the user types (keeps deletions natural). */
@@ -222,18 +231,26 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
     try { ch = await post<ServerChallenge>("/api/liveness/challenge"); } catch (e) { setHint(`Could not start the face check: ${e}`); return; }
     const list = ch.sequence;
     setChs(list); setIdx(0); setState("challenge");
-    result.current = { frames: [await grabFrame(v)], done: [], id: ch.challenge_id };
-    result.current.selfie = result.current.frames[0];
+    const neutral = await grabFrame(v);
+    result.current = { frames: [neutral], done: [], id: ch.challenge_id };
+    result.current.selfie = neutral;
+    // capture a continuous burst through the whole challenge (~1 frame / 150ms): the server checks that the head
+    // sweeps smoothly, so a few still photos can't stand in for a live turn. Capped under the server frame limit.
+    let lastCap = 0;
+    const capture = async (now: number) => {
+      if (now - lastCap > 150 && result.current.frames.length < 34) { lastCap = now; result.current.frames.push(await grabFrame(v)); }
+    };
     for (let i = 0; i < list.length; i++) {
       setIdx(i);
       const ok = await new Promise<boolean>((resolve) => {
         const t0 = performance.now();
-        const tick = () => {
+        const tick = async () => {
           const el = (performance.now() - t0) / 1000;
           setLeft(Math.max(0, Math.ceil(8 - el)));
           if (el > 8) return resolve(false);
           const s = signal(lm.detectForVideo(v, performance.now()));
           setHint(s.faces === 0 ? "No face in frame" : s.faces > 1 ? "Only one person please" : "");
+          await capture(performance.now());
           if (satisfied(list[i], s)) return resolve(true);
           requestAnimationFrame(tick);
         };
@@ -241,7 +258,6 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
       });
       if (!ok) { setState("failed"); return; }
       result.current.done.push(list[i]);
-      result.current.frames.push(await grabFrame(v));
     }
     setState("passed");
     stopCamera();

@@ -187,21 +187,24 @@ def build_testkit(hist, encrypted: int = 0) -> dict:
         for k in range(encrypted):
             p = person()
             card = C.render(_fields(p), _crop(p["photos"][0]), make_qr_text(_payload(_fields(p)), encrypt=True))
-            add(f"enc_{k + 1:02d}", f"Genuine applicant {k + 1}, encrypted QR", ["APPROVE"],
+            add(f"enc_{k + 1:02d}", f"Genuine applicant {k + 1}, encrypted QR", ["REVIEW"],
                 "Registry citizen with a card whose QR is signed and AES-encrypted: a phone scan shows only ciphertext; "
-                "the server decrypts it, verifies the issuer signature and compares it with the card and the form.",
+                "the server decrypts it, verifies the signature and compares it with the card and form. REVIEW because "
+                "scripted still photos can't pass the live head-turn; on a webcam this is APPROVE.",
                 form(p), card, p["photos"][1], frames_of=p["photos"])
         return _finish()
 
     # --- should be APPROVED
     p = person()
-    add("01_genuine", "Genuine applicant", ["APPROVE"],
-        "Real registry citizen, own card with a valid signed QR, selfie matches card and registry, normal typing.",
+    add("01_genuine", "Genuine applicant (scripted still photos)", ["REVIEW"],
+        "Real registry citizen, everything matches. Scripted frames are still photos, so the live head-turn cannot be "
+        "confirmed (REVIEW). The same person on a real webcam is APPROVE.",
         form(p), genuine_card(p), p["photos"][1], frames_of=p["photos"])
     p = person()
     initial = f"{p['name'].split()[0][0]}. {p['name'].split()[-1]}"
-    add("02_name_initial", "Genuine, name written with an initial", ["APPROVE"],
-        f"Form says '{initial}' but the card says '{p['name']}'. Indian-name fuzzy matching must not punish this.",
+    add("02_name_initial", "Genuine, name written with an initial", ["REVIEW"],
+        f"Form says '{initial}' but the card says '{p['name']}'; Indian-name fuzzy matching accepts it. REVIEW only "
+        "because scripted still photos can't prove a live head-turn.",
         form(p, name=initial), genuine_card(p), p["photos"][1], frames_of=p["photos"])
 
     # --- should be REVIEWED (genuine person, but a check could not complete)
@@ -266,10 +269,10 @@ def build_testkit(hist, encrypted: int = 0) -> dict:
     mule_dev = f"Dmule{tag}"
     for k, sur in enumerate(rng.sample(LAST, 3)):
         m = person(surname=sur)
-        add(f"13_mule_{k + 1}", f"Recruited account holder {k + 1} of 3 (same phone)",
-            ["APPROVE"] if k < 2 else ["REVIEW"],
-            "Genuine person with genuine documents, but the same device has just onboarded other unrelated people. "
-            "Members 1 and 2 pass; from the third, the device pattern holds the case for a human (never an automatic reject).",
+        add(f"13_mule_{k + 1}", f"Recruited account holder {k + 1} of 3 (same phone)", ["REVIEW"],
+            "Genuine person and documents, but the same device has onboarded other unrelated people. The third member "
+            "trips the mule-herding pattern (COR_MULE_HERDING). All three are REVIEW here because scripted stills "
+            "can't pass the live check; on a webcam members 1 and 2 would be APPROVE.",
             form(m), genuine_card(m), m["photos"][1], device=mule_dev, manual=False, frames_of=m["photos"])
 
     return _finish()
@@ -284,8 +287,7 @@ def manual_sheet(kit: dict) -> str:
     for s in kit["scenarios"]:
         if not s["manual"]:
             continue
-        exp = "REVIEW (an uploaded selfie gives the server no liveness evidence; scripts/run_tests.py answers the real challenge and gets APPROVE)" \
-            if s["expect"] == ["APPROVE"] else " or ".join(s["expect"])
+        exp = " or ".join(s["expect"]) + " (an uploaded selfie or scripted stills cannot pass the live head-turn; only a real webcam reaches APPROVE)"
         f = s["form"]
         L += [f"## {s['id']} — {s['title']}", f"**Expected:** {exp}  ", f"**Why:** {s['why']}", "",
               f"- Card file: `{s['id']}_card.jpg`  ·  Selfie file: `{s['id']}_selfie.jpg`",

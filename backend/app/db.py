@@ -32,6 +32,7 @@ class Application(SQLModel, table=True):
     model_status: str = ""
     policy_version: str = ""
     step_up: dict = Field(default_factory=dict, sa_column=Column(JSON))    # simulated, display only
+    context: dict = Field(default_factory=dict, sa_column=Column(JSON))    # V-CIP: geo-tag, network, consent
     summary: str = ""
     stepped_up: bool = False
     status: str = "open"                       # open | approved | rejected (analyst)
