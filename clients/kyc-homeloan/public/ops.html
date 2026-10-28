@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KYC Operations Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --surface: #fcfcfb; --page: #f4f5f8; --ink: #1f2933; --ink-2: #52514e; --muted: #7b8290; --line: #e4e7eb; --grid: #eceef2;
@@ -11,7 +14,8 @@
     --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --other: #b9bcc4;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 14px/1.5 -apple-system, "Segoe UI", Inter, sans-serif; color: var(--ink); background: var(--page); }
+  .kpi b, .hrow .val, td .muted, .b, svg text { font-family: "Geist Mono", ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  body { margin: 0; font: 14px/1.55 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; color: var(--ink); background: var(--page); }
   header { background: #1f2933; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
   header b { font-weight: 600; } header small { opacity: .75; }
   .mode { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: rgba(255,255,255,.1); display: inline-flex; gap: 6px; align-items: center; }
