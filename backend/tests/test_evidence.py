@@ -94,3 +94,10 @@ def test_mule_herding_counts_other_people_on_one_device():
     assert h.device_people("d1", t + timedelta(hours=5), "Meera Pai") == 3
     assert h.device_people("d1", t + timedelta(hours=5), "Kavya Naik") == 2  # same surname: household, not counted
     assert h.device_people("d1", t + timedelta(days=9), "Meera Pai") == 0
+
+
+def test_llm_guardrail_checks_every_code_not_just_single_brackets():
+    from app.llm.client import cites_only
+    assert cites_only("The card was edited [DOC_QR_OCR_MISMATCH].", {"DOC_QR_OCR_MISMATCH"})
+    assert not cites_only("Edited [DOC_QR_OCR_MISMATCH, BIO_MADE_UP]", {"DOC_QR_OCR_MISMATCH"})  # multi-code bracket
+    assert not cites_only("Looks fine to me.", {"DOC_QR_OCR_MISMATCH"})  # must cite something

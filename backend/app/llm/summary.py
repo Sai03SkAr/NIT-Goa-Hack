@@ -1,21 +1,21 @@
 """LLM explains, never decides. Input = structured module outputs only; output must cite reason codes.
 Falls back to a deterministic template when no key is set or the API fails."""
 import json
-import os
 import re
 
+from app.llm import client as llm
 from app.schemas import code_text
 
-PROMPT = """You are a KYC fraud analyst assistant. Summarise this automated decision in 3-4 sentences for a human
-reviewer. Rules: cite reason codes in square brackets exactly as given (e.g. [REG_SIM_NEW]); never invent a reason,
-code, number or action; do not change the decision; end with the recommended action verbatim.
+PROMPT = """You help a KYC reviewer. In 3 short sentences of plain English, say what the automated check decided and why.
+Rules: use only the findings listed; after each finding you mention, put its code in square brackets exactly as given
+(e.g. [REG_SIM_NEW]); do not mention models, SHAP, feature names or internal scores; never invent a finding, number
+or action; do not change the decision; end with the recommended action, word for word.
 
 Decision: {band} ({prob})
-Unresolved required checks: {unresolved}
-Fraud type: {ftype}
+Required checks not passed: {unresolved}
+Pattern: {ftype}
 Recommended action: {action}
-Reason codes (module: code, weight): {reasons}
-Top model drivers (SHAP): {shap}"""
+Findings (code: plain meaning): {reasons}"""
 
 
 def _top_reasons(modules: list[dict], k=6):
@@ -41,21 +41,11 @@ def _prob(case):
 
 def summarize(case: dict) -> tuple[str, str]:
     """Returns (text, source) where source is 'llm' or 'template'."""
-    key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not key:
+    rs = _top_reasons(case["modules"])
+    out = llm.complete(PROMPT.format(band=case["band"], prob=_prob(case),
+                                     unresolved=", ".join(code_text(c) for c in case.get("rule_codes_ev") or []) or "none",
+                                     ftype=case["fraud_label"], action=case["action"],
+                                     reasons=json.dumps({c: code_text(c) for _, c, _ in rs})))
+    if not out or not llm.cites_only(out, {c for _, c, _ in rs}):  # guardrail: invented or uncited code -> template
         return template(case), "template"
-    try:
-        from google import genai
-        client = genai.Client(api_key=key)
-        rs = _top_reasons(case["modules"])
-        prompt = PROMPT.format(band=case["band"], prob=_prob(case),
-                               unresolved=", ".join(code_text(c) for c in case.get("rule_codes_ev") or []) or "none", ftype=case["fraud_label"], action=case["action"],
-                               reasons=json.dumps(rs), shap=json.dumps(case.get("shap", [])))
-        out = client.models.generate_content(model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), contents=prompt).text
-        cited = set(re.findall(r"\[([A-Z_]+)\]", out or ""))
-        allowed = {c for _, c, _ in rs}
-        if not out or not cited or not cited <= allowed:  # guardrail: any uncited/invented code -> template
-            return template(case), "template"
-        return out.strip(), "llm"
-    except Exception:
-        return template(case), "template"
+    return out, "llm"

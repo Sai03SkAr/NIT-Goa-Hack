@@ -552,7 +552,8 @@ def graph(app_id: str | None = None, hops: int = 2, min_size: int = 3):
 # ------------------------------------------------------------------ config, metrics, attack lab
 @app.get("/api/config")
 def get_config():
-    return {"bands": P.Runtime.bands, "face_threshold": threshold(), "llm": bool(__import__("os").getenv("GEMINI_API_KEY"))}
+    from app.llm.client import provider
+    return {"bands": P.Runtime.bands, "face_threshold": threshold(), "llm": provider()}
 
 
 class Bands(BaseModel):

@@ -22,7 +22,7 @@ VIRTUAL_ENV=.venv uv pip install -r backend/requirements.txt -c backend/constrai
 cd frontend && npm run dev        # http://localhost:3000
 ```
 
-Optional: `export GEMINI_API_KEY=...` before starting the backend for LLM summaries (a deterministic template is used otherwise).
+Optional: put a Groq key in `backend/.secrets/groq_api_key` (or `export GROQ_API_KEY=...`) for LLM-worded summaries and investigator answers. The LLM only rewords findings the system already produced; any answer naming a finding that isn't in the case is discarded for the deterministic template. Decisions never use it.
 
 **Analyst sign-in.** The console and every case file, image and mock registry are analyst-only. On first start the
 backend writes a random key to `backend/.secrets/analyst_key` (git-ignored): paste it into the sign-in screen once per
@@ -91,27 +91,42 @@ Real-world fraud methods from 2024 to 2026 and how each is handled: **[docs/THRE
 - Leakage check on top features is written into `precomputed/metrics.json`.
 
 ## Results (seeded build: 1,400 applications, test = days 20-29, 444 apps, 85 fraud)
-| Setting | ROC-AUC | Recall | FPR |
+Synthetic population (generated identities, LFW faces). Liveness outcomes in these rows are generator-labelled
+fixtures, not live camera sessions. ROC/PR-AUC are on the calibrated model probability; recall and false-flag rates
+are on the bands the evidence policy actually assigns.
+
+| Setting | ROC-AUC | Recall | Genuine flagged |
 |---|---|---|---|
-| Document only | 0.79 | 0.58 | 3.6% |
-| Biometric only | 0.98 | 0.87 | 1.1% |
-| Behaviour only | 0.85 | 0.74 | 13.9% |
-| Registry only | 0.90 | 0.76 | 0.3% |
-| Correlation only | 0.68 | 0.34 | 1.4% |
-| **Fused** | **0.997** | **1.00** | **0.6%** |
-| Fused + hard rules + quality gate | 0.997 | 1.00 | 7.5% flagged, almost all sent to review (failed liveness, face mismatch, poor photo) |
+| Document only | 0.78 | 0.52 | 0.6% |
+| Biometric only | 0.98 | 0.91 | 1.1% |
+| Behaviour only | 0.85 | 0.65 | 10.9% |
+| Registry only | 0.91 | 0.78 | 0.6% |
+| Correlation only | 0.68 | 0.34 | 1.7% |
+| **Fused model** | **0.998** | **1.00** | **0.6%** |
+| **Fused + evidence policy (what the system does)** | 0.998 | **1.00** | 9.5% held, nearly all sent to REVIEW |
 
-PR-AUC 0.977. Fraud-pattern labels are correct for 84.7% of caught fraud. Acceptance test: `scripts/run_tests.py` passes 14/14 on fresh identities.
+- 95% bootstrap intervals: ROC-AUC 0.993-1.000, recall 1.00-1.00, genuine flagged 6.8%-12.6%.
+- Bands on the test split: 325 APPROVE, 31 REVIEW, 88 REJECT. Of the 88 rejections, 84 were fraud (precision 95%):
+  4 of 359 genuine applicants were rejected.
+- Why genuine applicants are held (34): a failed liveness fixture, a borderline face match, or unreadable card text.
+  Each is a "check again" case, which the policy sends to a person instead of approving blind.
+- PR-AUC 0.982. Fraud-pattern labels match the true type for 86% of caught fraud (74% counting "injection" as wrong
+  for bots and fabricators). The cost curve on the calibration split confirms the 0.30 approve cut-off.
 
-**Under attack (Attack Lab, test-split sample of 185 apps, 85 fraud):** across JPEG, noise, blur, brightness and screen-recapture sweeps at every strength, **no fraud is approved** and fraud recall stays at 100%; at most 6% of genuine applicants are rejected. Very poor photos (blur >= 1.5, noise >= 20, strong recapture) send genuine people to "please retake" instead of a rejection. Training uses degraded copies of training-period applications (`eval/augment.py`); calibration and test data are never augmented.
+**Under attack (Attack Lab, test-split sample of 185 apps, 85 fraud):** across JPEG, noise, blur, brightness and
+screen-recapture sweeps at every strength, **no fraud is approved** and fraud recall stays at 100%; at most 4% of
+genuine applicants are rejected. At the strongest blur, noise and recapture levels every genuine applicant is held for
+a retake (photo quality check), which is the intended behaviour: too poor to judge is never a fraud verdict. Ring,
+humanised-bot, virtual-camera, replay and face-splice scenarios: 100% flagged. The adaptive attacker, who controls
+every behaviour and graph feature, turns no caught fraud into an approval (85/85 still flagged).
 
 **Thresholds (all measured, none guessed):**
 - Face 1:1 match at FAR 0.1% (0.203): genuine miss rate 2.6%. The equal-error point (0.12) let ~2% of impostors through and was retired.
 - Face 1:N reuse search at ~0.03 expected false hits per search (0.322).
 - APPROVE cut-off 0.30, checked with a cost curve on the calibration split (missed fraud = `TRUEID_FN_COST` x a false alarm, default 10).
-- A QR vs printed-text mismatch read with OCR confidence >= 0.6 is rejected as an edit; below that it is treated as unreadable and sent to review (edits read at p5 0.69, blurry genuine misreads at median 0.41).
+- A QR vs printed-text mismatch is rejected as an edit only when it is read with OCR confidence >= 0.6 **and** the printed value could be real (the ID passes its checksum, the date parses). Otherwise it is treated as unreadable and sent to review. This stopped a genuine card being rejected for one misread ID digit.
 
-**TruFor (measured on our cards):** on 40 test cards, clean vs Poisson-edited DOB, TruFor's score is at chance (AUC 0.49) and it flags 97.5% of clean cards too; its heatmap lights the legitimately pasted photo (mean 0.73) and misses the edited DOB (0.13). The signed QR catches 100% of the same edits. TruFor is available as evidence on the case page and in the Attack Lab (`./scripts/setup_trufor.sh`); it never feeds the decision.
+**TruFor (measured on our cards):** on 40 test cards, clean vs Poisson-edited DOB, TruFor's score is at chance (AUC 0.49) and it flags 97.5% of clean cards too; its heatmap lights the legitimately pasted photo (mean 0.73) and misses the edited DOB (0.13). The signed QR catches 95% of the same edits outright; the rest are read too unclearly to call and go to review, never to approval. TruFor is available as evidence on the case page and in the Attack Lab (`./scripts/setup_trufor.sh`); it never feeds the decision.
 
 **Fixed weaknesses:** tilted card photos are read with a QR-anchored perspective correction when it helps (best of both readings: mild tilt 10/10, moderate 7/10 vs 0/10 before); recapture no longer rejects genuine people for misread dates.
 **Remaining weaknesses:** very strong recapture, blur or noise sends most genuine applicants to review (retake), so throughput drops on bad photos; see the Attack Lab.
@@ -129,7 +144,8 @@ PR-AUC 0.977. Fraud-pattern labels are correct for 84.7% of caught fraud. Accept
 | `TRUEID_RETENTION_DAYS` | 30 | Uploaded card/selfie images older than this are deleted at startup |
 | `TRUEID_HMAC_KEY` | generated | Key for hashing ID numbers in the graph |
 | `TRUEID_FN_COST` | 10 | Cost of a missed fraud relative to a false alarm, for the cost curve |
-| `GEMINI_API_KEY` | unset | LLM-written summaries (templates otherwise) |
+| `GROQ_API_KEY` (or `backend/.secrets/groq_api_key`) | unset | LLM wording for case summaries and investigator answers via Groq (`GROQ_MODEL`, default `openai/gpt-oss-120b`); templates otherwise |
+| `GEMINI_API_KEY` | unset | Used only if no Groq key is set |
 
 Right to erasure: `DELETE /api/apps/{id}` (or **Erase applicant data** on the case page) removes the record, its images and its graph entry, and leaves an audit stub. Applicants see plain next-step messages, never the internal reason codes.
 

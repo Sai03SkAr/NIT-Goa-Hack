@@ -134,6 +134,10 @@ def manifest(feats, n_tr, n_ca, n_te):
     try:
         commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
                                 cwd=Path(__file__).parent).stdout.strip() or None
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True,
+                               cwd=Path(__file__).parent).stdout.strip()
+        if commit and dirty:
+            commit += " + uncommitted changes"
     except OSError:
         commit = None
     return {"policy_version": POLICY_VERSION, "feature_schema_version": FEATURE_SCHEMA_VERSION, "features": feats,

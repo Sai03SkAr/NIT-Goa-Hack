@@ -32,7 +32,7 @@ export default function Metrics() {
         <div className="mt-3 max-w-4xl rounded-lg border border-line bg-bg-2 p-3 text-xs text-muted">
           <span className="font-medium text-fg">How these numbers were made. </span>
           {d.provenance?.evaluation_kind ?? "synthetic population"}. ROC/PR-AUC are on the {m.ranking_metrics_on ?? "model probability"}; recall, FPR and band counts are on the {m.decision_metrics_on ?? "policy bands"}.
-          {m.held_by_evidence != null && <> {pct(m.held_by_evidence)} of test cases were held by the evidence policy regardless of score.</>}
+          {m.held_by_evidence != null && <> {pct(m.held_by_evidence)} of all test cases (fraud and genuine together) had at least one required check not passed, so they could not be approved whatever the score.</>}
           {d.provenance?.git_commit && <> Model built from commit <span className="mono">{d.provenance.git_commit}</span>, {d.provenance.policy_version}.</>}
           {m.ci95 && <> 95% bootstrap intervals: recall {pct(m.ci95.recall_fdr[0])}–{pct(m.ci95.recall_fdr[1])}, FPR {pct(m.ci95.fpr[0], 2)}–{pct(m.ci95.fpr[1], 2)}, ROC-AUC {m.ci95.roc_auc[0].toFixed(3)}–{m.ci95.roc_auc[1].toFixed(3)}.</>}
         </div>
