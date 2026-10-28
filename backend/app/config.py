@@ -24,6 +24,6 @@ DEFAULT_FACE_THRESHOLD = 0.35
 EDGE_BASE = {"face": 1.0, "id_hash": 1.0, "device": 0.8, "phone": 0.7, "email_stem": 0.6,
              "address": 0.4, "keystroke": 0.3, "ip": 0.15}
 
-PLACEHOLDERS = {"9999999999", "0000000000", "1234567890", "test@test.com", "na", "n/a", "none", "-", ""}
+PLACEHOLDERS = {"127.0.0.1", "::1", "localhost", "9999999999", "0000000000", "1234567890", "test@test.com", "na", "n/a", "none", "-", ""}
 
 HMAC_KEY = b"trueid-demo-hmac-key"  # shortcut: hard-coded demo key, load from env/KMS in production

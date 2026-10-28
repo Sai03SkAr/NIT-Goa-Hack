@@ -37,7 +37,8 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="TrueID Shield", version="1.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+# any local dev port (Next falls back to 3001+ when 3000 is busy); the SSE stream is called cross-origin
+app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
                    allow_methods=["*"], allow_headers=["*"])
 app.include_router(mocks.router)
 app.mount("/files", StaticFiles(directory=GEN), name="files")
@@ -108,7 +109,7 @@ async def apply(payload: str = Form(...), card: UploadFile = File(...), selfie: 
     tele = {"field_times": [], "fill_time": 60, "iki_mean": 180, "iki_std": 60, "paste_fields": 0, "corrections": 2,
             "blur_count": 0, "mouse_entropy": 3.0, "keystroke_vec": [0.0] * 12} | data.get("telemetry", {})
     a = {"app_id": app_id, "ts": datetime.now().isoformat(timespec="seconds"), "source": data.get("source", "live"),
-         "form": data["form"], "device": {"ip": "127.0.0.1"} | data.get("device", {}), "telemetry": tele,
+         "form": data["form"], "device": data.get("device", {}), "telemetry": tele,
          "liveness": data.get("liveness", {"passed": False}),
          "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg"}
     JOBS[app_id] = queue.Queue()
@@ -367,6 +368,13 @@ def ring_sim():
         run_job(a["app_id"], state)  # sequential so each member sees the previous ones
         JOBS.pop(a["app_id"], None)
     return {"app_ids": ids}
+
+
+@app.post("/api/testkit")
+def testkit():
+    """Fresh test identities + cards + expected outcomes (see docs/TESTING.md)."""
+    from app.testkit import build_testkit
+    return build_testkit(P.Runtime.hist)
 
 
 @app.post("/api/demo/kit")

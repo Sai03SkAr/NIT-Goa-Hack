@@ -24,6 +24,9 @@ cd frontend && npm run dev        # http://localhost:3000
 
 Optional: `export GEMINI_API_KEY=...` before starting the backend for LLM summaries (a deterministic template is used otherwise).
 
+## Testing
+See **[docs/TESTING.md](docs/TESTING.md)**. Quick check: `.venv/bin/python scripts/run_tests.py` → `14/14 passed`.
+
 ## Deliverables map
 
 | # | Deliverable | Where |

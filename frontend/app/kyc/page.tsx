@@ -116,7 +116,14 @@ const FIELDS: { k: keyof Form; label: string; ph: string; span?: number; mono?: 
 ];
 
 function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form) => void; tel: Telemetry; onNext: () => void }) {
-  const valid = form.name && /^\d{2}\/\d{2}\/\d{4}$/.test(form.dob) && form.id_number.replace(/\D/g, "").length === 12 && form.phone && form.email;
+  const missing = [
+    !form.name && "full name",
+    !/^\d{2}\/\d{2}\/\d{4}$/.test(form.dob) && "date of birth as DD/MM/YYYY",
+    form.id_number.replace(/\D/g, "").length !== 12 && "12-digit ID number",
+    !form.phone && "mobile",
+    !form.email && "email",
+  ].filter(Boolean) as string[];
+  const valid = missing.length === 0;
   return (
     <div className="panel p-8">
       <div className="flex items-center gap-3"><UserRound className="size-5 text-brand" /><h2 className="text-xl font-semibold">Your details</h2></div>
@@ -125,7 +132,7 @@ function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form
           <label key={k} className={clsx("block", span === 2 && "md:col-span-2")}>
             <span className="label">{label}</span>
             <input className={clsx("input mt-1.5", mono && "mono")} placeholder={ph} value={form[k]}
-              onChange={(e) => setForm({ ...form, [k]: e.target.value })} {...tel.bind(k)} />
+              onChange={(e) => setForm({ ...form, [k]: k === "dob" ? fmtDob(e.target.value) : e.target.value })} {...tel.bind(k)} />
           </label>
         ))}
         <label className="block">
@@ -136,11 +143,18 @@ function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form
         </label>
       </div>
       <div className="mt-6 flex items-center justify-between">
-        <span className="text-xs text-dim">Typing rhythm and timing are captured silently for fraud detection. Field contents are not keylogged.</span>
+        <span className="text-xs text-dim">{valid ? "Typing rhythm and timing are captured silently for fraud detection. Field contents are not keylogged."
+          : <span className="text-review">Still needed: {missing.join(", ")}</span>}</span>
         <button className="btn btn-primary" disabled={!valid} onClick={onNext}>Continue <ChevronRight className="size-4" /></button>
       </div>
     </div>
   );
+}
+
+/** 03082006 -> 03/08/2006 as the user types (keeps deletions natural). */
+function fmtDob(v: string) {
+  const d = v.replace(/\D/g, "").slice(0, 8);
+  return [d.slice(0, 2), d.slice(2, 4), d.slice(4)].filter(Boolean).join("/");
 }
 
 function DocStep({ card, setCard, onBack, onNext }: { card: File | null; setCard: (f: File) => void; onBack: () => void; onNext: () => void }) {
@@ -293,10 +307,18 @@ function DemoKit({ onPick }: { onPick: (f: Form, card: File) => void }) {
   const [kit, setKit] = useState<Record<string, { card: string; form: Form; note?: string }> | null>(null);
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState<string | null>(null);
+  // the kit enrols a registry identity, so keep it across runs instead of re-enrolling every time
+  useEffect(() => {
+    try { const k = localStorage.getItem("trueid-demo-kit"); if (k) setKit(JSON.parse(k)); } catch {}
+  }, []);
   async function build(photo: File) {
     setBusy(true);
     const fd = new FormData(); fd.append("photo", photo);
-    try { setKit(await post("/api/demo/kit", fd)); } finally { setBusy(false); }
+    try {
+      const k = await post("/api/demo/kit", fd);
+      setKit(k);
+      try { localStorage.setItem("trueid-demo-kit", JSON.stringify(k)); } catch {}
+    } finally { setBusy(false); }
   }
   async function pick(k: string, autofill: boolean) {
     const s = kit![k];

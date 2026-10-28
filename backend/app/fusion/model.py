@@ -39,6 +39,13 @@ def hard_rules(feats: dict) -> tuple[str | None, list[str]]:
     if feats.get("doc_qr_missing") == 0 and feats.get("doc_sig_invalid") == 0 and \
             (feats.get("doc_qr_ocr_dob") == 0 or feats.get("doc_qr_ocr_name", 1) < 0.8):
         rej.append("DOC_QR_OCR_MISMATCH")
+    from app.modules.biometric.face import threshold
+    t = threshold()
+    card_miss = feats.get("bio_sim_card", 1) < t           # NaN compares False: a missing face is handled elsewhere
+    reg_miss = feats.get("bio_sim_registry", 1) < t
+    # a face mismatch can never be auto-approved; it is only a floor (a blurry genuine selfie fails both, so not REJECT)
+    if card_miss: rev.append("BIO_CARD_FACE_MISMATCH")
+    if reg_miss: rev.append("BIO_REGISTRY_FACE_MISMATCH")
     if feats.get("bio_liveness_pass") == 0: rev.append("BIO_LIVENESS_FAIL")
     if rej:
         return "REJECT", rej

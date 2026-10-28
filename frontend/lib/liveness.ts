@@ -8,6 +8,12 @@ export const CHALLENGE_TEXT: Record<Challenge, string> = {
   blink: "Blink both eyes", smile: "Give a big smile", turn_left: "Turn your head to your left", turn_right: "Turn your head to your right",
 };
 
+// MediaPipe's wasm logs "INFO: ..." lines through console.error, which the Next dev overlay shows as errors.
+if (typeof window !== "undefined") {
+  const err = console.error.bind(console);
+  console.error = (...a: unknown[]) => { if (typeof a[0] === "string" && a[0].startsWith("INFO:")) return; err(...a); };
+}
+
 let landmarker: Promise<FaceLandmarker> | null = null;
 export function getLandmarker() {
   landmarker ??= FilesetResolver.forVisionTasks("/mediapipe/wasm").then((fs) =>

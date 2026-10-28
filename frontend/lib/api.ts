@@ -1,4 +1,6 @@
-export const API = process.env.NEXT_PUBLIC_API ?? "http://localhost:8000";
+export const API = process.env.NEXT_PUBLIC_API ?? ""; // same origin: proxied to FastAPI by next.config.ts
+// SSE goes direct: proxies can buffer event streams. 127.0.0.1, not "localhost", to avoid an IPv6 (::1) miss.
+export const STREAM_API = process.env.NEXT_PUBLIC_STREAM_API ?? "http://127.0.0.1:8000";
 
 export const fileUrl = (p?: string | null) => (!p ? "" : p.startsWith("http") ? p : `${API}${p}`);
 

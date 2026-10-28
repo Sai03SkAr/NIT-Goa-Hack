@@ -4,7 +4,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import { ArrowRight, Bot, Brain, CheckCircle2, CircleDashed, FileSearch, Fingerprint, GitMerge, Network, Scale, ScanFace, ShieldQuestion, Sparkles, Database } from "lucide-react";
 import { BandBadge, Logo, RiskBar, SimBadge, riskColor } from "@/components/ui";
-import { API } from "@/lib/api";
+import { STREAM_API } from "@/lib/api";
 
 type Ev = { node: string; module?: string; risk?: number; reasons?: string[]; latency_ms?: number; prob?: number; band?: string;
   forced?: string | null; fraud_label?: string; fraud_action?: string; step_up?: { voice: number; simulated: boolean }; summary?: string; error?: string };
@@ -32,7 +32,7 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    const es = new EventSource(`${API}/api/apply/${id}/events`);
+    const es = new EventSource(`${STREAM_API}/api/apply/${id}/events`);
     es.addEventListener("node", (m) => {
       const ev: Ev = JSON.parse((m as MessageEvent).data);
       setEvs((p) => ({ ...p, [ev.node]: { ...p[ev.node], ...ev } }));

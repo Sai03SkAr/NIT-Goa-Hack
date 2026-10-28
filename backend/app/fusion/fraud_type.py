@@ -17,6 +17,8 @@ def classify(f: dict) -> str:
     g = lambda k, d=0.0: f.get(k, d) if f.get(k, d) == f.get(k, d) else d  # NaN -> default
     if g("doc_qr_missing", 1) == 0 and g("doc_sig_invalid") == 0 and (g("doc_qr_ocr_dob", 1) == 0 or g("doc_qr_ocr_name", 1) < 0.8):
         return "tampered"
+    if g("doc_sig_invalid") and g("reg_id_found", 1):
+        return "tampered"  # counterfeit card for a real identity
     if g("bio_virtual_cam"):
         return "injection"
     if g("cor_ring_score") > 0 or (g("bio_face_reuse_diff_name") > 0 and g("cor_comp_size") >= 3) or g("beh_email_seq") > 0:
