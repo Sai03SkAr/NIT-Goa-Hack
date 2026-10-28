@@ -1,0 +1,225 @@
+"use client";
+import { use, useEffect, useState } from "react";
+import clsx from "clsx";
+import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bot, Check, FileSearch, Fingerprint, Network, ScanFace, Sparkles, X } from "lucide-react";
+import { BandBadge, RiskBar, Section, SimBadge, TypeChip, riskColor } from "@/components/ui";
+import { IdentityGraph, type GLink, type GNode } from "@/components/Graph";
+import { API, type CaseDetail, type ModuleResult, fileUrl, get, post } from "@/lib/api";
+
+const ICON: Record<string, any> = { document: FileSearch, biometric: ScanFace, behavior: Bot, registry: Fingerprint, correlation: Network };
+
+export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const [c, setC] = useState<CaseDetail | null>(null);
+  const [g, setG] = useState<{ nodes: GNode[]; links: GLink[] } | null>(null);
+  const [err, setErr] = useState("");
+  const load = () => get<CaseDetail>(`/api/apps/${id}`).then(setC).catch((e) => setErr(String(e)));
+  useEffect(() => { load(); get(`/api/graph?app_id=${id}&hops=2`).then(setG).catch(() => {}); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (err) return <div className="panel p-6 text-reject">{err}</div>;
+  if (!c) return <div className="text-muted">Loading case…</div>;
+  const mod = (n: string) => c.modules.find((m) => m.module === n);
+  const doc = mod("document"), bio = mod("biometric");
+
+  return (
+    <div className="space-y-6">
+      <div className="panel flex flex-wrap items-center gap-6 p-6">
+        <div>
+          <div className="label">Application <span className="mono normal-case tracking-normal">{c.app_id}</span> · {c.source}</div>
+          <h1 className="mt-1 text-2xl font-semibold">{c.name}</h1>
+          <div className="mono mt-1 text-xs text-dim">ID ···· {c.id_last4} · {c.ts.replace("T", " ")}</div>
+        </div>
+        <div className="flex items-center gap-4">
+          <BandBadge band={c.band} size="lg" />
+          <div className="w-40"><div className="text-xs text-muted">fraud probability</div><div className="mono text-xl" style={{ color: riskColor(c.prob) }}>{c.prob.toFixed(3)}</div><RiskBar value={c.prob} /></div>
+        </div>
+        {c.band !== "APPROVE" && (
+          <div className="min-w-[260px] flex-1 rounded-xl border border-line-2 bg-bg-2/60 p-4">
+            <div className="flex items-center gap-2"><TypeChip type={c.fraud_type} label={c.fraud_label} />{c.stepped_up && <span className="chip">stepped up</span>}</div>
+            <div className="mt-2 text-sm"><span className="text-muted">Recommended action: </span>{c.action}</div>
+            {!!c.rule_codes?.length && <div className="mt-2 flex flex-wrap gap-1">{c.rule_codes.map((r) => <span key={r} className="chip mono text-[10px] text-reject">hard rule: {r}</span>)}</div>}
+          </div>
+        )}
+        {c.truth_type && <span className="chip ml-auto" title="Ground truth from the synthetic generator (seeded data only)">truth: {c.truth_type}</span>}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-5">
+        {c.modules.map((m) => <ModuleCard key={m.module} m={m} />)}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <DocumentPanel c={c} m={doc} />
+        <FaceTrio c={c} m={bio} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Section title="Identity graph · 2 hops" right={<span className="text-xs text-dim">{g?.nodes.length ?? 0} linked applications</span>}>
+          {g && g.nodes.length > 1 ? <IdentityGraph nodes={g.nodes} links={g.links} focus={c.app_id} height={340} /> :
+            <div className="grid h-[340px] place-items-center rounded-xl border border-line text-sm text-dim">No strong links to other applications</div>}
+        </Section>
+        <ShapPanel shap={c.shap} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <Section title="Analyst summary" right={<span className="chip"><Sparkles className="size-3" />cites reason codes only</span>}>
+          <p className="text-sm leading-relaxed text-fg/90">{c.summary}</p>
+        </Section>
+        <OverridePanel c={c} onDone={load} />
+      </div>
+    </div>
+  );
+}
+
+function ModuleCard({ m }: { m: ModuleResult }) {
+  const I = ICON[m.module] ?? FileSearch;
+  return (
+    <div className="panel p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-semibold capitalize"><I className="size-4" style={{ color: riskColor(m.risk) }} />{m.module}</div>
+        <span className="mono text-sm" style={{ color: riskColor(m.risk) }}>{m.risk.toFixed(2)}</span>
+      </div>
+      <RiskBar value={m.risk} className="mt-2" />
+      <div className="mt-3 space-y-1.5">
+        {m.reasons.length ? m.reasons.map((r) => (
+          <div key={r.code} className="text-xs leading-snug" title={r.code}>
+            <span className={clsx("mono mr-1 text-[10px]", r.weight < 0 ? "text-approve" : "text-dim")}>{r.code}</span>
+            <span className="text-muted">{r.text}</span>
+          </div>
+        )) : <div className="text-xs text-dim">No signals raised.</div>}
+      </div>
+    </div>
+  );
+}
+
+function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
+  const [ela, setEla] = useState(false);
+  const ev = m?.evidence ?? {};
+  const qr = ev.qr ?? {};
+  const ocr = ev.ocr ?? {};
+  const form = c.form_masked ?? {};
+  const rows: [string, string | undefined, string | undefined, string | undefined][] = [
+    ["Name", qr.n, ocr.name, form.name?.toUpperCase()],
+    ["Date of birth", qr.d, ocr.dob, form.dob],
+    ["ID (last 4)", qr.l4, ocr.id_number?.slice(-4), form.id_number?.slice(-4)],
+    ["Issued", qr.i, ocr.issue_date, "—"],
+  ];
+  return (
+    <Section title="Document evidence" right={
+      <div className="flex items-center gap-2">
+        <span className={clsx("chip", ev.qr_signature_valid ? "text-approve" : "text-reject")}>{ev.qr ? (ev.qr_signature_valid ? "QR signature valid" : "QR signature INVALID") : "No readable QR"}</span>
+        <button className="btn py-1 text-xs" onClick={() => setEla(!ela)}>{ela ? "Original" : "ELA heatmap"}</button>
+      </div>}>
+      <img src={ela ? `${API}/api/apps/${c.app_id}/ela.png` : fileUrl(c.card_path)} alt="card" className="w-full rounded-lg border border-line" />
+      <table className="mt-4 w-full text-sm">
+        <thead><tr className="label text-left"><th className="py-1.5">Field</th><th>Signed QR</th><th>Printed (OCR)</th><th>Form</th></tr></thead>
+        <tbody className="mono text-xs">
+          {rows.map(([k, a, b, f]) => {
+            const mismatch = a && b && a.replace(/\s/g, "") !== b.replace(/\s/g, "");
+            return (
+              <tr key={k} className="border-t border-line/60">
+                <td className="py-1.5 font-sans text-muted">{k}</td><td>{a ?? "—"}</td>
+                <td className={mismatch ? "text-reject" : ""}>{b || "—"}</td><td>{f ?? "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {ev.forensics && (
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+          <span className="chip">pixel forensics {ev.forensics.score}</span>
+          <span className="chip">texture ratio {ev.forensics.tex_ratio}</span>
+          <span className="chip">font dev {ev.forensics.font_dev}</span>
+          <span className="chip">TruFor {ev.trufor ?? "n/a (CPU build)"}</span>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function FaceTrio({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
+  const ev = m?.evidence ?? {};
+  const thr = ev.threshold ?? 0.35;
+  const sim = (x?: number | null) => (x == null || Number.isNaN(x) ? "—" : x.toFixed(2));
+  const ok = (x?: number | null) => x != null && !Number.isNaN(x) && x >= thr;
+  const live = ev.liveness ?? {};
+  return (
+    <Section title="Biometrics" right={<span className="text-xs text-dim">ArcFace threshold {thr} (EER-calibrated)</span>}>
+      <div className="grid grid-cols-3 gap-3">
+        {[["Selfie", fileUrl(c.selfie_path)], ["Card portrait", null], ["Registry photo", fileUrl(ev.registry_face_url)]].map(([l, src], i) => (
+          <div key={String(l)}>
+            <div className="aspect-[4/5] overflow-hidden rounded-lg border border-line bg-bg-2">
+              {i === 1 ? <div className="h-full w-full bg-cover" style={{ backgroundImage: `url(${fileUrl(c.card_path)})`, backgroundSize: "417%", backgroundPosition: "5.3% 36%" }} />
+                : src ? <img src={String(src)} alt={String(l)} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-xs text-dim">not in registry</div>}
+            </div>
+            <div className="mt-1.5 text-center text-xs text-muted">{l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 space-y-2 text-sm">
+        <Pair label="Selfie ↔ card" v={sim(ev.sim_card)} ok={ok(ev.sim_card)} />
+        <Pair label="Selfie ↔ registry" v={sim(ev.sim_registry)} ok={ok(ev.sim_registry)} />
+        <Pair label="Face reused under another name" v={String(ev.reuse?.diff_name ?? 0)} ok={!(ev.reuse?.diff_name > 0)} />
+        <Pair label="Active liveness" v={live.passed ? "passed" : "failed / not run"} ok={!!live.passed} />
+        <Pair label="Virtual camera" v={live.virtual_camera ? "detected" : "none"} ok={!live.virtual_camera} />
+        {live.server_check && <Pair label="Server frame check" v={`sim ${live.server_check.min_sim ?? "—"} · yaw Δ${live.server_check.yaw_spread ?? "—"}°`} ok={live.frames_consistent} />}
+        <div className="flex items-center justify-between text-xs text-dim"><span>Voice / fingerprint</span><SimBadge /></div>
+      </div>
+    </Section>
+  );
+}
+
+function Pair({ label, v, ok }: { label: string; v: string; ok: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted">{label}</span>
+      <span className={clsx("mono flex items-center gap-1.5 text-xs", ok ? "text-approve" : "text-reject")}>{ok ? <Check className="size-3.5" /> : <X className="size-3.5" />}{v}</span>
+    </div>
+  );
+}
+
+function ShapPanel({ shap }: { shap: CaseDetail["shap"] }) {
+  const data = [...(shap ?? [])].reverse().map((s) => ({ name: `${s.feature}${s.value != null ? ` = ${s.value}` : ""}`, v: s.shap }));
+  return (
+    <Section title="Why: SHAP top-5 drivers" right={<span className="text-xs text-dim">+ pushes toward fraud</span>}>
+      {data.length ? (
+        <ResponsiveContainer width="100%" height={340}>
+          <BarChart data={data} layout="vertical" margin={{ left: 10, right: 20 }}>
+            <XAxis type="number" stroke="#5b6a84" fontSize={11} />
+            <YAxis type="category" dataKey="name" width={230} stroke="#8b9ab3" fontSize={11} tickLine={false} />
+            <ReferenceLine x={0} stroke="#334155" />
+            <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10 }} formatter={(v: any) => Number(v).toFixed(3)} />
+            <Bar dataKey="v" radius={4}>{data.map((d) => <Cell key={d.name} fill={d.v > 0 ? "#fb7185" : "#34d399"} />)}</Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      ) : <div className="text-sm text-dim">Model not trained yet.</div>}
+    </Section>
+  );
+}
+
+function OverridePanel({ c, onDone }: { c: CaseDetail; onDone: () => void }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function act(status: string) {
+    setBusy(true);
+    try { await post(`/api/apps/${c.app_id}/override`, { status, note }); setNote(""); onDone(); } finally { setBusy(false); }
+  }
+  return (
+    <Section title="Analyst decision & audit log" right={<span className="chip capitalize">{c.status}</span>}>
+      <textarea className="input h-20 resize-none text-sm" placeholder="Reason for your decision (kept in the audit log)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <div className="mt-3 flex gap-2">
+        <button className="btn flex-1" disabled={busy || !note} onClick={() => act("approved")}><Check className="size-4 text-approve" />Approve</button>
+        <button className="btn btn-danger flex-1" disabled={busy || !note} onClick={() => act("rejected")}><X className="size-4" />Reject</button>
+      </div>
+      <ol className="mt-4 max-h-44 space-y-2 overflow-auto text-xs">
+        {c.audit.map((a, i) => (
+          <li key={i} className="flex gap-3 border-l border-line-2 pl-3">
+            <span className="mono text-dim">{a.ts.replace("T", " ").slice(0, 19)}</span>
+            <span><span className="text-fg">{a.actor}</span> · {a.action}{a.note && <span className="text-muted"> — {a.note}</span>}</span>
+          </li>
+        ))}
+        {!c.audit.length && <li className="text-dim">Seeded case: no audit entries yet.</li>}
+      </ol>
+    </Section>
+  );
+}

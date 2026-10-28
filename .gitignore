@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+data/lfw/
+data/generated/
+data/issuer_keys/
+precomputed/
+models/*.json
+models/*.joblib
+backend/trueid.db
+backend/uploads/
+frontend/node_modules/
+frontend/.next/
+.DS_Store
+logs/

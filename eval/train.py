@@ -1,0 +1,150 @@
+"""Train fusion (XGBoost + isotonic calibration) on a TIME split and write every D7 metric + the ablation.
+
+Split: days 0-15 train, 16-19 calibration, 20-29 test (no shuffling: fraud evolves over time).
+Outputs: models/{xgb.json, calibrator.joblib, features.json}, precomputed/{metrics.json, ablation.json, test_scores.csv}
+"""
+import json
+import sys
+from pathlib import Path
+
+import joblib
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.isotonic import IsotonicRegression
+from sklearn.metrics import (average_precision_score, confusion_matrix, f1_score, precision_score, recall_score,
+                             roc_auc_score)
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from app.config import BANDS, MODELS, PRE  # noqa: E402
+from app.fusion.model import GROUPS, hard_rules  # noqa: E402
+
+PARAMS = dict(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
+              min_child_weight=2, eval_metric="logloss", random_state=0, n_jobs=4)
+LEAK_SUSPECTS = ("jpeg", "width", "height", "scale", "quality", "extract_ms", "assess_ms")
+
+
+def load():
+    df = pd.read_csv(PRE / "features.csv")
+    feats = [c for c in df.columns if c.split("_")[0] in ("doc", "bio", "beh", "reg", "cor")]
+    assert not any(s in c for c in feats for s in LEAK_SUSPECTS), "leaky column in features"
+    return df, feats
+
+
+def split(df):
+    return df[df.day < 16], df[(df.day >= 16) & (df.day < 20)], df[df.day >= 20]
+
+
+def fit(tr, cols):
+    pos = tr.label.mean()
+    m = xgb.XGBClassifier(**PARAMS, scale_pos_weight=(1 - pos) / max(pos, 1e-3))
+    m.fit(tr[cols].values.astype(np.float32), tr.label.values)
+    return m
+
+
+def proba(m, df, cols):
+    return m.predict_proba(df[cols].values.astype(np.float32))[:, 1]
+
+
+def final_scores(df, p):
+    """Apply hard rules on top of the calibrated probability (what the live system does)."""
+    out, bands = [], []
+    for (_, r), pi in zip(df.iterrows(), p):
+        forced, _ = hard_rules(r.to_dict())
+        s = max(pi, 0.95) if forced == "REJECT" else (max(pi, BANDS["approve_below"]) if forced == "REVIEW" else pi)
+        out.append(s)
+        bands.append("APPROVE" if s < BANDS["approve_below"] else ("REJECT" if s >= BANDS["reject_at"] else "REVIEW"))
+    return np.array(out), bands
+
+
+def topk_recall(y, s, frac):
+    k = max(1, int(round(len(s) * frac)))
+    idx = np.argsort(-s)[:k]
+    return float(y[idx].sum() / max(y.sum(), 1))
+
+
+def metrics(y, s, bands, df):
+    flag = np.array([b != "APPROVE" for b in bands]).astype(int)
+    rej = np.array([b == "REJECT" for b in bands]).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y, flag, labels=[0, 1]).ravel()
+    per_type = {}
+    for t, g in df.assign(flag=flag).groupby("fraud_type"):
+        per_type[t] = {"n": int(len(g)), "flag_rate": round(float(g.flag.mean()), 3)}
+    sub_hn = df.assign(flag=flag)[df.fraud_type == "hard_negative"].groupby("sub").flag.mean().round(3).to_dict()
+    lat = (df.extract_ms + df.assess_ms).values
+    return {
+        "definition": "Fraud Detection Rate (FDR) = recall on the fraud class; flagged = REVIEW or REJECT",
+        "n_test": int(len(y)), "n_fraud": int(y.sum()),
+        "precision": round(precision_score(y, flag), 4), "recall_fdr": round(recall_score(y, flag), 4),
+        "f1": round(f1_score(y, flag), 4), "fpr": round(fp / max(fp + tn, 1), 4),
+        "reject_precision": round(precision_score(y, rej, zero_division=0), 4), "reject_recall": round(recall_score(y, rej), 4),
+        "roc_auc": round(roc_auc_score(y, s), 4), "pr_auc": round(average_precision_score(y, s), 4),
+        "fdr_at_top3pct": round(topk_recall(y, s, .03), 4), "fdr_at_top5pct": round(topk_recall(y, s, .05), 4),
+        "confusion": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
+        "per_type": per_type, "hard_negative_false_flag_by_sub": sub_hn,
+        "band_counts": pd.Series(bands).value_counts().to_dict(),
+        "latency_ms": {"p50": float(np.percentile(lat, 50)), "p95": float(np.percentile(lat, 95)),
+                       "note": "per-application CPU time for all modules (seeded batch, excludes LLM)"},
+    }
+
+
+def main():
+    df, feats = load()
+    tr, ca, te = split(df)
+    print(f"train {len(tr)} ({tr.label.sum()} fraud) | cal {len(ca)} | test {len(te)} ({te.label.sum()} fraud)")
+
+    m = fit(tr, feats)
+    iso = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(proba(m, ca, feats), ca.label.values)
+    p_te = iso.predict(proba(m, te, feats))
+    s_te, bands = final_scores(te, p_te)
+    res = metrics(te.label.values, s_te, bands, te)
+
+    gain = m.get_booster().get_score(importance_type="gain")
+    top = sorted(((feats[int(k[1:])] if k.startswith("f") and k[1:].isdigit() else k, v) for k, v in gain.items()),
+                 key=lambda x: -x[1])[:15]
+    from app.fusion.fraud_type import classify
+    caught = te.assign(band=bands)[te.label.values == 1]
+    caught = caught[caught.band != "APPROVE"]
+    pred = [classify(r.to_dict()) for _, r in caught.iterrows()]
+    alias = {"injection": {"bot", "third_party", "ring"}}  # replay/virtual-cam is how bots and fabricators inject
+    hit = [p == t or t in alias.get(p, ()) for p, t in zip(pred, caught.fraud_type)]
+    res["fraud_type_accuracy"] = round(float(np.mean(hit)), 3) if hit else None
+    res["fraud_type_confusion"] = pd.crosstab(caught.fraud_type.values, np.array(pred)).to_dict()
+    res["top_features"] = [{"feature": k, "gain": round(v, 2)} for k, v in top]
+    res["leakage_check"] = "pass: no image-size/JPEG/timing columns among features" if not any(
+        s in k for k, _ in top for s in LEAK_SUSPECTS) else "WARN"
+
+    # ---- ablation: each module alone, all-but-one, fused, fused + rules
+    abl = []
+    def run(name, cols, rules=False):
+        mm = fit(tr, cols)
+        pi = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(proba(mm, ca, cols), ca.label.values).predict(proba(mm, te, cols))
+        s, b = final_scores(te, pi) if rules else (pi, ["APPROVE" if x < BANDS["approve_below"] else "REVIEW" for x in pi])
+        flag = np.array([x != "APPROVE" for x in b]).astype(int)
+        y = te.label.values
+        abl.append({"setting": name, "n_features": len(cols), "roc_auc": round(roc_auc_score(y, s), 4),
+                    "pr_auc": round(average_precision_score(y, s), 4), "recall": round(recall_score(y, flag), 4),
+                    "fpr": round(float(((flag == 1) & (y == 0)).sum() / max((y == 0).sum(), 1)), 4),
+                    "f1": round(f1_score(y, flag), 4)})
+    for g, pre in GROUPS.items():
+        run(f"{g} only", [c for c in feats if c.startswith(pre)])
+    for g, pre in GROUPS.items():
+        run(f"all except {g}", [c for c in feats if not c.startswith(pre)])
+    run("fused (all modules)", feats)
+    run("fused + hard rules", feats, rules=True)
+
+    m.save_model(MODELS / "xgb.json")
+    joblib.dump(iso, MODELS / "calibrator.joblib")
+    (MODELS / "features.json").write_text(json.dumps(feats))
+    (PRE / "metrics.json").write_text(json.dumps(res, indent=1, default=float))
+    (PRE / "ablation.json").write_text(json.dumps(abl, indent=1))
+    te.assign(score=s_te, band=bands)[["app_id", "day", "label", "fraud_type", "sub", "score", "band"]].to_csv(
+        PRE / "test_scores.csv", index=False)
+    print(json.dumps({k: res[k] for k in ("precision", "recall_fdr", "f1", "fpr", "roc_auc", "pr_auc")}, indent=1))
+    print("per type:", res["per_type"])
+    print("hard negatives flagged:", res["hard_negative_false_flag_by_sub"])
+    print(pd.DataFrame(abl).to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()
