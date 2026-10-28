@@ -18,7 +18,8 @@ def classify(f: dict) -> str:
     if g("doc_qr_missing", 1) == 0 and g("doc_sig_invalid") == 0 and (g("doc_qr_ocr_dob", 1) == 0 or g("doc_qr_ocr_name", 1) < 0.8):
         return "tampered"
     if g("doc_sig_invalid") and g("reg_id_found", 1):
-        return "tampered"  # counterfeit card for a real identity
+        # counterfeit card: same person as the registry = forged copy; different name = real number, invented person
+        return "tampered" if g("reg_name_sim", 1) >= 0.8 else "first_party"
     if g("bio_virtual_cam"):
         return "injection"
     if g("cor_ring_score") > 0 or (g("bio_face_reuse_diff_name") > 0 and g("cor_comp_size") >= 3) or g("beh_email_seq") > 0:

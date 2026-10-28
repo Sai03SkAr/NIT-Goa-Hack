@@ -4,6 +4,7 @@ Split: days 0-15 train, 16-19 calibration, 20-29 test (no shuffling: fraud evolv
 Outputs: models/{xgb.json, calibrator.joblib, features.json}, precomputed/{metrics.json, ablation.json, test_scores.csv}
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from sklearn.metrics import (average_precision_score, confusion_matrix, f1_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.config import BANDS, MODELS, PRE  # noqa: E402
-from app.fusion.model import GROUPS, hard_rules  # noqa: E402
+from app.fusion.model import GROUPS, hard_rules, quality_low  # noqa: E402
 
 PARAMS = dict(n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
               min_child_weight=2, eval_metric="logloss", random_state=0, n_jobs=4)
@@ -50,7 +51,11 @@ def final_scores(df, p):
     """Apply hard rules on top of the calibrated probability (what the live system does)."""
     out, bands = [], []
     for (_, r), pi in zip(df.iterrows(), p):
-        forced, _ = hard_rules(r.to_dict())
+        row = r.to_dict()
+        forced, _ = hard_rules(row)
+        if forced != "REJECT" and quality_low(row):
+            forced = "REVIEW"
+            pi = min(pi, 0.5)  # capped exactly as decide() caps it
         s = max(pi, 0.95) if forced == "REJECT" else (max(pi, BANDS["approve_below"]) if forced == "REVIEW" else pi)
         out.append(s)
         bands.append("APPROVE" if s < BANDS["approve_below"] else ("REJECT" if s >= BANDS["reject_at"] else "REVIEW"))
@@ -63,7 +68,7 @@ def topk_recall(y, s, frac):
     return float(y[idx].sum() / max(y.sum(), 1))
 
 
-FN_COST, FP_COST = 10, 1  # a missed fraud costs ~10x a false alarm (plan 4.6)
+FN_COST, FP_COST = float(os.getenv("TRUEID_FN_COST", "10")), 1.0  # cost of a missed fraud vs a false alarm; set from real loss data
 
 
 def cost_curve(ca, p_ca, te, s_te):
@@ -112,6 +117,12 @@ def metrics(y, s, bands, df):
 def main():
     df, feats = load()
     tr, ca, te = split(df)
+    aug_path = PRE / "augmented.csv"
+    if aug_path.exists():  # degraded copies of training-period apps only (eval/augment.py); cal/test stay clean
+        aug = pd.read_csv(aug_path)
+        aug = aug[aug.day < 16]
+        tr = pd.concat([tr, aug[tr.columns.intersection(aug.columns)]], ignore_index=True)
+        print(f"+ {len(aug)} augmented training rows")
     print(f"train {len(tr)} ({tr.label.sum()} fraud) | cal {len(ca)} | test {len(te)} ({te.label.sum()} fraud)")
 
     m = fit(tr, feats)

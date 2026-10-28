@@ -11,17 +11,72 @@ from app.modules.document import checksums, dates, forensics, ocr, qr_sign, truf
 from app.schemas import ModuleResult, reason
 
 
-def normalize(card_bgr: np.ndarray) -> np.ndarray:
-    # shortcut: assumes a flat, template-aligned scan; add QR-anchored homography for phone photos
-    return cv2.resize(card_bgr, (C.W, C.H), interpolation=cv2.INTER_AREA)
+_QR = cv2.QRCodeDetector()
+
+
+def _qr_anchored(card_bgr: np.ndarray) -> np.ndarray | None:
+    """Flatten a tilted / recaptured card: the QR's four detected corners are matched to where that exact QR sits on
+    the template (rebuilt from its decoded text with the renderer's settings), giving a perspective transform."""
+    import qrcode
+    text, pts, _ = _QR.detectAndDecode(card_bgr)
+    if not text or pts is None:
+        return None
+    src = pts.reshape(4, 2).astype(np.float32)
+    q = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2, box_size=1)
+    q.add_data(text)
+    q.make(fit=True)
+    side = C.QR_BOX[2] - C.QR_BOX[0]
+    n = q.modules_count
+    box = max(1, side // (n + 4))
+    off = (side - (n + 4) * box) // 2
+    x0, y0 = C.QR_BOX[0] + off + 2 * box, C.QR_BOX[1] + off + 2 * box
+    x1, y1 = x0 + n * box, y0 + n * box
+    dst = np.float32([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+    M = cv2.getPerspectiveTransform(src, dst)
+    scale = abs(np.linalg.det(M[:2, :2]))
+    if not 0.05 < scale < 20:  # degenerate corners: don't trust the warp
+        return None
+    return cv2.warpPerspective(card_bgr, M, (C.W, C.H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+
+
+OCR_SURE = 0.6
+
+
+def mismatch_confidence(f: dict) -> float:
+    """OCR confidence of the field(s) that disagree with the signed QR (1.0 when unknown, e.g. older records)."""
+    vals = []
+    if f.get("doc_qr_ocr_dob") == 0:
+        vals.append(f.get("doc_ocr_conf_dob", 1.0))
+    if f.get("doc_qr_ocr_name", 1) < 0.8:
+        vals.append(f.get("doc_ocr_conf_name", 1.0))
+    return min(vals) if vals else 1.0
+
+
+def normalize(card_bgr: np.ndarray, anchored: bool = False) -> np.ndarray:
+    flat = _qr_anchored(card_bgr) if anchored else None
+    return flat if flat is not None else cv2.resize(card_bgr, (C.W, C.H), interpolation=cv2.INTER_AREA)
+
+
+def _best_reading(card_bgr: np.ndarray) -> tuple[np.ndarray, dict, str]:
+    """OCR both a plain resize and the QR-anchored flattening; keep the more confident one.
+    Measured on tilted test cards: never worse than either alone (mild tilt 10/10, moderate 7/10 vs 0/10)."""
+    plain = normalize(card_bgr)
+    best = (plain, ocr.read_fields(plain), "resize")
+    flat = _qr_anchored(card_bgr)
+    if flat is not None:
+        f = ocr.read_fields(flat)
+        conf = lambda r: float(np.mean([v["conf"] for v in r.values()]))
+        if conf(f) > conf(best[1]):
+            best = (flat, f, "qr_anchored")
+    return best
 
 
 def extract(card_bgr: np.ndarray, raw: bytes | None = None, with_trufor=False) -> dict:
-    norm = normalize(card_bgr)
+    norm, fields, how = _best_reading(card_bgr)
     qr_text = qr_sign.read_qr(card_bgr)
     payload, sig_ok = qr_sign.parse_and_verify(qr_text)
-    return {"qr_found": qr_text is not None, "qr_payload": payload, "qr_sig_ok": sig_ok,
-            "ocr": ocr.read_fields(norm), "forensics": forensics.analyze(norm),
+    return {"qr_found": qr_text is not None, "qr_payload": payload, "qr_sig_ok": sig_ok, "normalized_by": how,
+            "ocr": fields, "forensics": forensics.analyze(norm),
             "exif_editor": forensics.exif_editor(raw),
             "trufor": trufor.score(card_bgr) if with_trufor else None}
 
@@ -45,8 +100,18 @@ def assess(ext: dict, form: dict, today: date) -> ModuleResult:
         f["doc_qr_ocr_name"] = name_sim(qp.get("n", ""), o["name"])
         f["doc_qr_ocr_dob"] = float(qp.get("d") == o["dob"])
         f["doc_qr_ocr_id4"] = float(qp.get("l4") == o["id_number"][-4:])
+        conf = ext["ocr"]
+        f["doc_ocr_conf_dob"], f["doc_ocr_conf_name"] = conf["dob"]["conf"], conf["name"]["conf"]
         if sig_ok and (f["doc_qr_ocr_name"] < 0.8 or not f["doc_qr_ocr_dob"]):
-            R.append(reason("DOC_QR_OCR_MISMATCH", 0.5)); hard = 1.0
+            R.append(reason("DOC_QR_OCR_MISMATCH", 0.5))
+            # a crisp edit is read confidently; a blurry genuine card is misread with low confidence (measured: p5 0.69
+            # vs median 0.41). An unsure read is not evidence: the model sees a neutral value (a blank would look
+            # like "no QR", which it learned from fabricated cards) and the review floor sends it to a human.
+            if mismatch_confidence(f) >= OCR_SURE:
+                hard = 1.0
+            else:
+                f["doc_qr_ocr_unsure"] = 1.0
+                f["doc_qr_ocr_dob"], f["doc_qr_ocr_name"] = 1.0, 1.0
     else:
         f["doc_qr_ocr_name"] = f["doc_qr_ocr_dob"] = f["doc_qr_ocr_id4"] = np.nan
     trusted = {"name": qp["n"], "dob": qp["d"], "issue_date": qp["i"]} if (qp and sig_ok) else \

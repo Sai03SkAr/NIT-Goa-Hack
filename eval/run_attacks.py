@@ -69,7 +69,10 @@ def summarize(y, scored):
     pix = np.array([s["pixel"] for s in scored])
     fused = np.array([max(s["prob"], .95) if s["band"] == "REJECT" else s["prob"] for s in scored])
     auc = lambda s: round(float(roc_auc_score(y, s)), 4) if len(set(y)) > 1 else None
+    bands = np.array([s["band"] for s in scored])
     return {"fused_recall": round(float(flag[y == 1].mean()), 4), "fused_fpr": round(float(flag[y == 0].mean()), 4),
+            "genuine_rejected": round(float((bands[y == 0] == "REJECT").mean()), 4),
+            "fraud_approved": round(float((bands[y == 1] == "APPROVE").mean()), 4),
             "fused_auc": auc(fused), "doc_only_recall": round(float((doc[y == 1] >= .5).mean()), 4),
             "doc_only_auc": auc(doc), "pixel_only_auc": auc(pix)}
 
@@ -123,6 +126,37 @@ def _hero_one(app):
             "forensic_flag": "DOC_FORENSIC_ANOMALY" in codes}
 
 
+def hero_trufor(gen, apps, n=40):
+    """TruFor on clean vs Poisson-edited cards: does it flag the edit, and does its heatmap point at the DOB field?"""
+    from datetime import timedelta
+    from PIL import Image
+    from app.modules.document import trufor
+    from app.modules.document.agent import normalize
+    from app.modules.document.card import FIELD_BOXES, PORTRAIT, poisson_edit
+    from app.modules.document.dates import parse
+    if not trufor.available():
+        return [{"detector": "TruFor", "value": "not installed (./scripts/setup_trufor.sh)"}]
+    box_mean = lambda h, b: float(h[b[1]:b[3], b[0]:b[2]].mean())
+    sc, se, dob_heat, portrait_heat = [], [], [], []
+    for i in list(gen.app_id)[:n]:
+        a = apps[i]
+        clean = normalize(cv2.imread(str(GEN / a["card_path"])))
+        new_dob = (parse(a["form"]["dob"]) - timedelta(days=1461)).strftime("%d/%m/%Y")
+        pil = Image.fromarray(cv2.cvtColor(clean, cv2.COLOR_BGR2RGB))
+        edited = cv2.cvtColor(np.array(poisson_edit(pil, "dob", new_dob)), cv2.COLOR_RGB2BGR)
+        s0, _ = trufor.infer(clean)
+        s1, h1 = trufor.infer(edited)
+        sc.append(s0); se.append(s1)
+        dob_heat.append(box_mean(h1, FIELD_BOXES["dob"])); portrait_heat.append(box_mean(h1, PORTRAIT))
+    yy = np.r_[np.zeros(len(sc)), np.ones(len(se))]
+    print(f"trufor: clean mean {np.mean(sc):.3f} edited mean {np.mean(se):.3f}")
+    return [{"detector": "TruFor score AUC, clean vs edited (0.5 = chance)", "value": round(float(roc_auc_score(yy, np.r_[sc, se])), 3)},
+            {"detector": "TruFor flags edited cards (score >= 0.5)", "value": round(float(np.mean(np.array(se) >= 0.5)), 3)},
+            {"detector": "TruFor flags CLEAN cards too (score >= 0.5)", "value": round(float(np.mean(np.array(sc) >= 0.5)), 3)},
+            {"detector": "TruFor heat on the edited DOB field (mean, 0-1)", "value": round(float(np.mean(dob_heat)), 3)},
+            {"detector": "TruFor heat on the untouched photo (mean, 0-1)", "value": round(float(np.mean(portrait_heat)), 3)}]
+
+
 def hero_attack(apps, te, workers):
     gen = te[te.label == 0].sample(min(60, (te.label == 0).sum()), random_state=2)
     with ProcessPoolExecutor(workers) as ex:
@@ -135,7 +169,7 @@ def hero_attack(apps, te, workers):
            "rows": [{"detector": "Pixel forensics (edge/font/noise) AUC, clean vs edited",
                      "value": round(float(roc_auc_score(yy, np.r_[pb, pa])), 3)},
                     {"detector": "Pixel forensics flag rate on edited cards", "value": round(float(np.mean([r["forensic_flag"] for r in res])), 3)},
-                    {"detector": "TruFor", "value": "not run on CPU in this build (DeepID: winners at chance on this edit)"},
+                    *hero_trufor(gen, apps),
                     {"detector": "Signed QR <-> OCR mismatch catch rate", "value": round(float(np.mean([r["qr_ocr_caught"] for r in res])), 3)}]}
     print("hero:", out["rows"])
     return [out]

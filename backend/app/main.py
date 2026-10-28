@@ -4,31 +4,35 @@ import json
 import pickle
 import queue
 import threading
+import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
 import cv2
 import networkx as nx
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app import db
-from app.config import BANDS, GEN, LIVE_HISTORY, PRE, UPLOADS
+from app.config import API_KEY, APPLY_RATE_PER_MIN, BANDS, GEN, LIVE_HISTORY, PRE, RETENTION_DAYS, UPLOADS
 from app.graph import pipeline as P
 from app.modules.biometric.face import reuse_threshold, threshold
 from app.modules.correlation.history import STRONG, History
 from app.modules.document import forensics
+from app.modules.document.agent import normalize as doc_normalize
 from app.modules.registry import mocks
 
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
+    purge_expired_uploads()
     P.Runtime.bands = dict(BANDS)
     P.Runtime.hist = load_history()
     P.pipeline()
@@ -41,6 +45,36 @@ app = FastAPI(title="TrueID Shield", version="1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
                    allow_methods=["*"], allow_headers=["*"])
 app.include_router(mocks.router)
+
+# applicant-facing paths stay open (the SSE stream cannot send headers); everything else needs the key when one is set
+PUBLIC = ("/api/apply", "/api/health", "/api/metrics", "/api/demo/kit", "/files/demo/", "/files/trufor/", "/docs", "/openapi.json")
+_hits: dict[str, deque] = defaultdict(deque)
+
+
+@app.middleware("http")
+async def guard(request: Request, call_next):
+    path = request.url.path
+    if API_KEY and not path.startswith(PUBLIC) and request.method != "OPTIONS":
+        if API_KEY not in (request.headers.get("x-api-key"), request.query_params.get("key")):
+            return JSONResponse({"detail": "missing or wrong X-API-Key"}, status_code=401)
+    if path == "/api/apply" and request.method == "POST":
+        client = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0]
+        now, q = time.time(), _hits[client]
+        while q and now - q[0] > 60:
+            q.popleft()
+        if len(q) >= APPLY_RATE_PER_MIN:
+            return JSONResponse({"detail": "too many applications from this client, try again in a minute"}, status_code=429)
+        q.append(now)
+    return await call_next(request)
+
+
+def purge_expired_uploads() -> int:
+    """Retention policy: uploaded card/selfie images older than RETENTION_DAYS are deleted (DB keeps masked fields only)."""
+    cutoff, n = time.time() - RETENTION_DAYS * 86400, 0
+    for f in UPLOADS.glob("*"):
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            f.unlink(); n += 1
+    return n
 app.mount("/files", StaticFiles(directory=GEN), name="files")
 app.mount("/uploads", StaticFiles(directory=UPLOADS), name="uploads")
 
@@ -51,6 +85,9 @@ def _warm():
     from app.modules.biometric.face import analyzer
     from app.modules.document.ocr import reader
     analyzer(); reader()
+    from app.modules.document import trufor
+    if trufor.available():
+        trufor._model()  # ~8 s; so the first "TruFor" click in a demo is instant
 
 
 def load_history() -> History:
@@ -206,16 +243,49 @@ def override(app_id: str, o: Override):
     return {"ok": True}
 
 
-@app.get("/api/apps/{app_id}/ela.png")
-def ela(app_id: str):
+def _card_image(app_id: str):
     with db.session() as s:
         r = s.get(db.Application, app_id)
     if not r:
         raise HTTPException(404)
-    path = (UPLOADS.parent / r.card_path.lstrip("/")) if r.card_path.startswith("/uploads") else GEN / r.card_path
+    path = (UPLOADS.parent / r.card_path.lstrip("/")) if r.card_path.startswith("/uploads") else GEN / r.card_path.removeprefix("/files/")
     img = cv2.imread(str(path))
-    ok, png = cv2.imencode(".png", forensics.ela_heatmap(img))
+    if img is None:
+        raise HTTPException(404, "card image missing")
+    return img
+
+
+@app.delete("/api/apps/{app_id}")
+def erase(app_id: str):
+    """Right to erasure (DPDP Act 2023): delete the application, its images and its graph record; keep an audit stub."""
+    with db.session() as s:
+        r = s.get(db.Application, app_id)
+        if not r:
+            raise HTTPException(404)
+        s.delete(r)
+        db.audit(s, app_id, "erased", "applicant data deleted on request", "analyst")
+        s.commit()
+    for f in UPLOADS.glob(f"{app_id}_*"):
+        f.unlink()
+    if LIVE_HISTORY.exists():  # in-memory graph forgets it at the next restart
+        keep = [l for l in LIVE_HISTORY.read_text().splitlines() if json.loads(l)["app"]["app_id"] != app_id]
+        LIVE_HISTORY.write_text("".join(l + "\n" for l in keep))
+    return {"erased": app_id}
+
+
+@app.get("/api/apps/{app_id}/ela.png")
+def ela(app_id: str):
+    ok, png = cv2.imencode(".png", forensics.ela_heatmap(_card_image(app_id)))
     return Response(png.tobytes(), media_type="image/png")
+
+
+@app.get("/api/apps/{app_id}/trufor")
+def trufor_check(app_id: str):
+    """TruFor score + localization heatmap for this card (evidence only, never changes the decision)."""
+    from app.modules.document import trufor
+    if not trufor.available():
+        raise HTTPException(503, "TruFor not installed: run ./scripts/setup_trufor.sh")
+    return trufor.analyze(doc_normalize(_card_image(app_id)))
 
 
 @app.get("/api/graph")
@@ -325,9 +395,12 @@ def attack_live(req: LiveAttack):
     before = doc.assess(doc.extract(card), form, today)
     after = doc.assess(doc.extract(after_img), form_after, today)
     ok, enc = cv2.imencode(".jpg", after_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    pick = lambda r: {"risk": r.risk, "reasons": [x.code for x in r.reasons], "forensic": r.features["doc_forensic"],
-                      "qr_valid": r.evidence["qr_signature_valid"], "ocr": r.evidence["ocr"], "qr": r.evidence["qr"]}
-    return P.jsonable({"before": pick(before), "after": pick(after), "truth": a["fraud_type"],
+    from app.modules.document import trufor
+    tf = trufor.available()
+    pick = lambda r, img: {"risk": r.risk, "reasons": [x.code for x in r.reasons], "forensic": r.features["doc_forensic"],
+                           "qr_valid": r.evidence["qr_signature_valid"], "ocr": r.evidence["ocr"], "qr": r.evidence["qr"],
+                           "trufor": trufor.analyze(doc.normalize(img)) if tf else None}
+    return P.jsonable({"before": pick(before, card), "after": pick(after, after_img), "truth": a["fraud_type"],
                        "image": "data:image/jpeg;base64," + base64.b64encode(enc.tobytes()).decode()})
 
 

@@ -2,10 +2,15 @@ export const API = process.env.NEXT_PUBLIC_API ?? ""; // same origin: proxied to
 // SSE goes direct: proxies can buffer event streams. 127.0.0.1, not "localhost", to avoid an IPv6 (::1) miss.
 export const STREAM_API = process.env.NEXT_PUBLIC_STREAM_API ?? "http://127.0.0.1:8000";
 
-export const fileUrl = (p?: string | null) => (!p ? "" : p.startsWith("http") ? p : `${API}${p}`);
+// optional analyst API key (backend TRUEID_API_KEY); images can't send headers, so they carry it as ?key=
+const KEY = process.env.NEXT_PUBLIC_API_KEY;
+const auth = (): Record<string, string> => (KEY ? { "X-API-Key": KEY } : {});
+export const withKey = (u: string) => (KEY ? `${u}${u.includes("?") ? "&" : "?"}key=${encodeURIComponent(KEY)}` : u);
+
+export const fileUrl = (p?: string | null) => (!p ? "" : p.startsWith("http") || p.startsWith("data:") ? p : withKey(`${API}${p}`));
 
 export async function get<T = any>(path: string): Promise<T> {
-  const r = await fetch(`${API}${path}`, { cache: "no-store" });
+  const r = await fetch(`${API}${path}`, { cache: "no-store", headers: auth() });
   if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
   return r.json();
 }
@@ -13,9 +18,15 @@ export async function get<T = any>(path: string): Promise<T> {
 export async function post<T = any>(path: string, body?: unknown): Promise<T> {
   const r = await fetch(`${API}${path}`, {
     method: "POST",
-    headers: body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+    headers: body instanceof FormData ? auth() : { "Content-Type": "application/json", ...auth() },
     body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
   });
+  if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+export async function del<T = any>(path: string): Promise<T> {
+  const r = await fetch(`${API}${path}`, { method: "DELETE", headers: auth() });
   if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
   return r.json();
 }

@@ -193,7 +193,7 @@ def node_event(node: str, update: dict) -> dict:
                    "latency_ms": m["latency_ms"], "simulated": m.get("simulated", False)})
     if "decision" in update:
         d = update["decision"]
-        ev.update({k: d.get(k) for k in ("prob", "band", "forced", "fraud_label", "fraud_action") if k in d})
+        ev.update({k: d.get(k) for k in ("prob", "band", "forced", "rule_codes", "fraud_label", "fraud_action") if k in d})
     if "step_up" in update:
         ev["step_up"] = update["step_up"]
     if "summary" in update:

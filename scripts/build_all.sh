@@ -22,6 +22,7 @@ if [ ! -f "$LFW" ]; then  # ~243 MB; parallel ranges because some networks throt
 fi
 $PY data/gen_population.py --n "$N"
 $PY eval/build_dataset.py "$WORKERS"
+$PY eval/augment.py
 $PY eval/train.py
 $PY eval/adaptive_attacker.py
 $PY eval/run_attacks.py "$WORKERS"

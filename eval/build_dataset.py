@@ -87,12 +87,17 @@ def calibrate_face(apps, reg_emb, ext):
     perm = rng.permutation(len(S))
     imp = [float(S[i] @ Rm[j]) for i, j in zip(range(len(S)), perm) if i != j]
     gen, imp = np.array(gen), np.array(imp)
-    best = min(np.linspace(0, 0.8, 161), key=lambda t: abs((gen < t).mean() - (imp >= t).mean()))
+    eer = min(np.linspace(0, 0.8, 161), key=lambda t: abs((gen < t).mean() - (imp >= t).mean()))
+    # 1:1 verification runs at FAR 0.1% (KYC operating point), not at EER (~2% impostor accepts): measured on
+    # selfie vs every OTHER person's registry photo
+    cross = (S @ Rm.T)[~np.eye(len(S), dtype=bool)]
+    best = float(np.quantile(cross, 1 - 1e-3))
     # 1:N reuse search compares against every prior face, so it needs a far lower FAR than 1:1 verification
     allimp = (S @ S.T)[~np.eye(len(S), dtype=bool)]
     # every search compares against the whole history: keep expected false hits per search <= 0.03
     reuse = float(np.quantile(allimp, 1 - 0.03 / len(apps)))
-    info = {"threshold": round(float(best), 3), "reuse_threshold": round(reuse, 3),
+    info = {"threshold": round(float(best), 3), "threshold_far": 1e-3, "eer_threshold": round(float(eer), 3),
+            "reuse_threshold": round(reuse, 3),
             "reuse_far": round(float((allimp >= reuse).mean()), 6), "reuse_frr": round(float((gen < reuse).mean()), 4),
             "n_reuse_impostor_pairs": int(allimp.size), "frr": round(float((gen < best).mean()), 4),
             "far": round(float((imp >= best).mean()), 4), "n_genuine": len(gen), "n_impostor": len(imp),

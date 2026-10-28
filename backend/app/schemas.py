@@ -15,6 +15,7 @@ REASONS: dict[str, str] = {
     "DOC_TRUFOR_HIGH": "TruFor forgery detector flags manipulation",
     "DOC_EXIF_EDITOR": "Image metadata shows an editing tool",
     "DOC_LAYOUT_DRIFT": "Text is off the template's expected positions",
+    "IMG_QUALITY_LOW": "Photos too blurry, noisy or unclear to verify reliably; ask for a retake",
     # biometric
     "BIO_CARD_FACE_MISMATCH": "Selfie does not match the card portrait",
     "BIO_REGISTRY_FACE_MISMATCH": "Selfie does not match the issuer's registry photo",

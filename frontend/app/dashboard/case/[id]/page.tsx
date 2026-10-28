@@ -6,7 +6,7 @@ import { Bot, Check, FileSearch, Fingerprint, Network, ScanFace, Sparkles, X } f
 import { BandBadge, RiskBar, Section, SimBadge, TypeChip, riskColor } from "@/components/ui";
 import { IdentityGraph, type GLink, type GNode } from "@/components/Graph";
 import { APPROVE, AXIS, MUTED, REJECT, TOOLTIP } from "@/lib/theme";
-import { API, type CaseDetail, type ModuleResult, fileUrl, get, post } from "@/lib/api";
+import { type CaseDetail, type ModuleResult, del, fileUrl, get, post } from "@/lib/api";
 
 const ICON: Record<string, any> = { document: FileSearch, biometric: ScanFace, behavior: Bot, registry: Fingerprint, correlation: Network };
 
@@ -95,7 +95,14 @@ function ModuleCard({ m }: { m: ModuleResult }) {
 }
 
 function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
-  const [ela, setEla] = useState(false);
+  const [view, setView] = useState<"card" | "ela" | "trufor">("card");
+  const [tf, setTf] = useState<{ score: number; heatmap: string } | { error: string } | null>(null);
+  async function showTrufor() {
+    setView("trufor");
+    if (tf && !("error" in tf)) return;
+    setTf(null);
+    try { setTf(await get(`/api/apps/${c.app_id}/trufor`)); } catch (e) { setTf({ error: String(e).includes("503") ? "TruFor is not installed. Run ./scripts/setup_trufor.sh" : String(e) }); }
+  }
   const ev = m?.evidence ?? {};
   const qr = ev.qr ?? {};
   const ocr = ev.ocr ?? {};
@@ -110,9 +117,19 @@ function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
     <Section title="Document evidence" right={
       <div className="flex items-center gap-2">
         <span className={clsx("chip", ev.qr_signature_valid ? "text-approve" : "text-reject")}>{ev.qr ? (ev.qr_signature_valid ? "QR signature valid" : "QR signature INVALID") : "No readable QR"}</span>
-        <button className="btn py-1 text-xs" onClick={() => setEla(!ela)}>{ela ? "Original" : "ELA heatmap"}</button>
+        <div className="flex rounded-lg bg-bg-2 p-0.5 text-xs">
+          {([["card", "Card"], ["ela", "ELA"], ["trufor", "TruFor"]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => (k === "trufor" ? showTrufor() : setView(k))}
+              className={clsx("rounded-md px-2.5 py-1", view === k ? "bg-panel font-medium shadow-sm" : "text-muted hover:text-fg")}>{l}</button>
+          ))}
+        </div>
       </div>}>
-      <img src={ela ? `${API}/api/apps/${c.app_id}/ela.png` : fileUrl(c.card_path)} alt="card" className="w-full rounded-lg border border-line" />
+      {view === "trufor" && !tf ? <div className="grid aspect-[1000/630] place-items-center rounded-lg border border-line bg-bg-2 text-sm text-muted">Running TruFor (first run loads the model, about 10 s)</div>
+        : <img src={view === "ela" ? fileUrl(`/api/apps/${c.app_id}/ela.png`) : view === "trufor" && tf && !("error" in tf) ? fileUrl(tf.heatmap) : fileUrl(c.card_path)} alt="card" className="w-full rounded-lg border border-line" />}
+      {view === "trufor" && tf && ("error" in tf
+        ? <p className="mt-2 text-sm text-reject">{tf.error}</p>
+        : <p className="mt-2 text-sm text-muted">TruFor (CVPR 2023) score <span className="mono font-medium text-fg">{tf.score.toFixed(3)}</span>. Red marks pixels it thinks were manipulated.
+            It is shown as evidence only and never changes the decision: on our cards it also flags the genuinely pasted photo, and it misses edited text fields that the signed QR catches.</p>)}
       <table className="mt-4 w-full text-sm">
         <thead><tr className="text-left text-xs text-muted"><th className="py-1.5">Field</th><th>Signed QR</th><th>Printed (OCR)</th><th>Form</th></tr></thead>
         <tbody className="mono text-xs">
@@ -132,7 +149,6 @@ function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
           <span className="chip">pixel forensics {ev.forensics.score}</span>
           <span className="chip">texture ratio {ev.forensics.tex_ratio}</span>
           <span className="chip">font dev {ev.forensics.font_dev}</span>
-          <span className="chip">TruFor {ev.trufor ?? "n/a (CPU build)"}</span>
         </div>
       )}
     </Section>
@@ -202,6 +218,11 @@ function ShapPanel({ shap }: { shap: CaseDetail["shap"] }) {
 function OverridePanel({ c, onDone }: { c: CaseDetail; onDone: () => void }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  async function erase() {
+    if (!confirm(`Permanently delete ${c.app_id}: the record, card and selfie images, and its graph link? This cannot be undone.`)) return;
+    await del(`/api/apps/${c.app_id}`);
+    window.location.href = "/dashboard";
+  }
   async function act(status: string) {
     setBusy(true);
     try { await post(`/api/apps/${c.app_id}/override`, { status, note }); setNote(""); onDone(); } finally { setBusy(false); }
@@ -222,6 +243,10 @@ function OverridePanel({ c, onDone }: { c: CaseDetail; onDone: () => void }) {
         ))}
         {!c.audit.length && <li className="text-dim">Seeded case: no audit entries yet.</li>}
       </ol>
+      <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs text-dim">
+        <span>Uploaded images are deleted automatically after the retention period.</span>
+        <button className="text-reject underline-offset-2 hover:underline" onClick={erase}>Erase applicant data</button>
+      </div>
     </Section>
   );
 }

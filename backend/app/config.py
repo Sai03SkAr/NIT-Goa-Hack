@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,4 +27,9 @@ EDGE_BASE = {"face": 1.0, "id_hash": 1.0, "device": 0.8, "phone": 0.7, "email_st
 
 PLACEHOLDERS = {"127.0.0.1", "::1", "localhost", "9999999999", "0000000000", "1234567890", "test@test.com", "na", "n/a", "none", "-", ""}
 
-HMAC_KEY = b"trueid-demo-hmac-key"  # shortcut: hard-coded demo key, load from env/KMS in production
+HMAC_KEY = os.getenv("TRUEID_HMAC_KEY", "trueid-demo-hmac-key").encode()  # set from a secret store in production
+
+# Operations (all optional; defaults suit a local demo)
+API_KEY = os.getenv("TRUEID_API_KEY")                         # when set, analyst endpoints need X-API-Key
+RETENTION_DAYS = int(os.getenv("TRUEID_RETENTION_DAYS", "30"))  # uploaded card/selfie images are deleted after this
+APPLY_RATE_PER_MIN = int(os.getenv("TRUEID_APPLY_RATE", "30"))  # submissions per client per minute

@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Crosshair, Play, ShieldCheck, Swords } from "lucide-react";
 import { Section, Stat, pct } from "@/components/ui";
-import { type AppRow, get, post } from "@/lib/api";
+import { type AppRow, fileUrl, get, post } from "@/lib/api";
 import { AXIS, BRAND, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
 
 
@@ -69,10 +69,12 @@ function Sweep({ a }: { a: any }) {
           <Line dataKey="fused_auc" name="Fused ROC-AUC" stroke="#8fa2d8" strokeWidth={2} dot />
           <Line dataKey="doc_only_auc" name="Document module alone, AUC" stroke={REVIEW} strokeDasharray="5 4" dot />
           <Line dataKey="pixel_only_auc" name="Pixel forensics alone, AUC" stroke={REJECT} strokeDasharray="3 3" dot />
-          <Line dataKey="fused_fpr" name="Fused FPR" stroke={MUTED} strokeWidth={1.5} dot />
+          <Line dataKey="fused_fpr" name="Genuine flagged (review or reject)" stroke={MUTED} strokeWidth={1.5} dot />
+          <Line dataKey="genuine_rejected" name="Genuine rejected" stroke={REJECT} strokeWidth={2} dot />
+          <Line dataKey="fraud_approved" name="Fraud approved" stroke="#8a6a00" strokeWidth={2} dot />
         </LineChart>
       </ResponsiveContainer>
-      <p className="mt-2 text-xs text-dim">Single pixel-level detectors degrade as image quality drops; the fused decision holds because QR signatures, registries, biometrics and the graph don't depend on pixels.</p>
+      <p className="mt-2 text-xs text-dim">Single pixel-level detectors degrade as image quality drops. The fused decision holds because signed QRs, registries and the graph don't depend on pixels; when photos are too poor to judge, people are asked to retake (review) rather than rejected.</p>
     </>
   );
 }
@@ -149,6 +151,8 @@ function LiveAttack() {
                   <span className="mono">doc risk {res[k].risk.toFixed(2)}, pixel {res[k].forensic.toFixed(2)}</span></div>
                 <div className="mt-2 flex flex-wrap gap-1">{res[k].reasons.length ? res[k].reasons.map((r: string) => <span key={r} className="chip mono text-[10px]">{r}</span>) : <span className="text-xs text-dim">no signals</span>}</div>
                 <div className="mono mt-2 text-[11px] text-dim">printed DOB {res[k].ocr?.dob || "-"}, signed QR DOB {res[k].qr?.d ?? "-"}, QR {res[k].qr_valid ? "valid" : "invalid/missing"}</div>
+                {res[k].trufor && <div className="mt-1 text-xs text-muted">TruFor score <span className="mono text-fg">{res[k].trufor.score.toFixed(3)}</span>{" "}
+                  <a href={fileUrl(res[k].trufor.heatmap)} target="_blank" className="text-brand hover:underline">heatmap</a></div>}
               </div>
             ))}
           </div>

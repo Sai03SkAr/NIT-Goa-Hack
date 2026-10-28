@@ -65,7 +65,7 @@ Do it in this order. Sit alone in the frame with your face lit from the front.
 - Genuine lands in REVIEW with `BIO_CARD_FACE_MISMATCH`: your enrolment photo and webcam face differ too much
   (old photo, glasses, angle). Rebuild the kit with a clearer photo.
 - Submit shows "Load failed": the backend is down. Check `curl localhost:8000/api/health`.
-- The pipeline page stays on "Agents are working…" for more than 20 s: the first run loads models (about 6 s);
+- The pipeline page stays on "Agents are working..." for more than 20 s: the first run loads models (about 6 s);
   if it persists, check `logs/backend.log`.
 
 ## 4. Analyst console checks
@@ -77,7 +77,10 @@ Do it in this order. Sit alone in the frame with your face lit from the front.
 | Identity graph | **Fraud Ring Simulator** adds 8 linked applicants; the new cluster appears highlighted |
 | Metrics | ROC-AUC ≈ 0.996, recall 100%, ablation bars show every single module below "fused" |
 | Attack Lab | Charts load; **Run attack** with "Poisson DOB edit" shows `DOC_QR_OCR_MISMATCH` after, nothing before |
-| Investigator | "Why are RS… and RS… linked?" lists face, device, email-stem and keystroke links |
+| Investigator | "Why are RS... and RS... linked?" lists face, device, email-stem and keystroke links |
+| Case page, **TruFor** tab | Heatmap + score in about a second (the model preloads at startup). On a DOB-edited card it lights the photo and misses the date: expected, that is the point |
+| Case page, **Erase applicant data** | Record, images and graph entry deleted; the queue no longer shows it |
+| Applicant result page | Plain message and next step only; switch on "Technical details" to see codes and scores |
 
 ## Resetting
 
