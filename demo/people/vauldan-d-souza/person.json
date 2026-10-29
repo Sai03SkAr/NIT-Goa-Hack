@@ -1,0 +1,22 @@
+{
+  "name": "Vauldan D'Souza",
+  "dob": "12/06/2004",
+  "gender": "M",
+  "address": "Boys Hostel, NIT Goa, Cuncolim, South Goa",
+  "pincode": "403703",
+  "phone": "9056297706",
+  "email": "vauldan.dsouza@example.com",
+  "id_number": "299071099465",
+  "pan": "PCRPD9285Z",
+  "issue_date": "05/07/2022",
+  "placeholders": [
+    "dob",
+    "address",
+    "pincode",
+    "phone",
+    "email",
+    "id_number",
+    "pan"
+  ],
+  "photo": "photo.jpg"
+}

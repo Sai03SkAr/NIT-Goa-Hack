@@ -5,6 +5,8 @@
 > A synthetic identity passes every single check on its own. So we don't trust any single check: we correlate
 > documents, biometrics, behaviour, registries and a cross-application identity graph, and prove it by attacking our own system.
 
+**Evaluating this project? Start at [docs/EVALUATION.md](docs/EVALUATION.md)**: how to run it, a 10-minute demo path, each PS3 requirement with its evidence, results and limits.
+
 Full design rationale: [docs/PLAN.md](docs/PLAN.md).
 
 ## Run it

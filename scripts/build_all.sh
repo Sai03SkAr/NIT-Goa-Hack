@@ -33,4 +33,5 @@ $PY eval/federated_profile.py
 $PY eval/footprint_eval.py
 $PY eval/run_attacks.py "$WORKERS"
 $PY eval/seed_db.py
+$PY scripts/make_person_card.py --all  # demo cards for the people in demo/people/, signed with this machine's key
 echo "build complete"
