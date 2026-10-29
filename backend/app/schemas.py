@@ -17,6 +17,8 @@ REASONS: dict[str, str] = {
     "DOC_LAYOUT_DRIFT": "Text is off the template's expected positions",
     "DOC_QR_UNVERIFIABLE": "The QR's signature could not be checked (unknown or missing issuer key)",
     "DOC_OCR_UNREADABLE": "Printed card text was too unclear to compare with the signed QR",
+    "DOC_UIDAI_QR": "Real Aadhaar: details checked against UIDAI's signed Secure QR (offline verification)",
+    "DOC_UIDAI_MOBILE_OTHER": "Mobile number differs from the one linked to this Aadhaar (numbers change; context only)",
     "DOC_GENAI_METADATA": "Card image metadata names an AI image generator",
     "IMG_QUALITY_LOW": "Photos too blurry, noisy or unclear to verify reliably; ask for a retake",
     # biometric
@@ -53,6 +55,8 @@ REASONS: dict[str, str] = {
     "REG_DOB_MISMATCH": "Date of birth differs from the identity registry",
     "REG_PAN_LINK_MISMATCH": "PAN is not linked to this ID number",
     "REG_PAN_NOT_FOUND": "PAN not found in the tax registry",
+    "REG_UIDAI_ATTESTED": "Identity confirmed by UIDAI's signature on the Aadhaar QR (not in the demo registry)",
+    "REG_PAN_UNVERIFIABLE": "PAN could not be checked: the demo tax registry only holds test identities",
     "REG_PAN_PERSON_MISMATCH": "PAN holder's name or date of birth differs from the applicant",
     "REG_UNAVAILABLE": "Registry could not be reached; identity is unverified, not disproven",
     "REG_SIM_NEW": "Phone SIM activated very recently",

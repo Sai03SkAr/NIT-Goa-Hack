@@ -329,7 +329,7 @@ function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
     try { setTf(await get(`/api/apps/${c.app_id}/trufor`)); } catch (e) { setTf({ error: String(e).includes("503") ? "TruFor is not installed. Run ./scripts/setup_trufor.sh" : String(e) }); }
   }
   const ev = m?.evidence ?? {};
-  const qrText = ev.qr_signature_valid ? "QR signature valid" : ({ INVALID_SIGNATURE: "QR signature INVALID", UNTRUSTED_KEY: "QR signed by an unknown key",
+  const qrText = ev.qr_signature_valid ? (ev.qr_kind === "aadhaar" ? "UIDAI signature valid" : "QR signature valid") : ({ INVALID_SIGNATURE: "QR signature INVALID", UNTRUSTED_KEY: "QR signed by an unknown key",
     MALFORMED: "QR unreadable or malformed", NOT_FOUND: "No readable QR", NO_TRUSTED_KEYS: "No issuer key configured" } as Record<string, string>)[ev.qr_status] ?? "No readable QR";
   return (
     <Section title="The card" sub="What was uploaded, and what the pixel checks see"
@@ -346,7 +346,16 @@ function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
         : <p className="mt-2 text-sm text-muted">TruFor (CVPR 2023) score <span className="mono font-medium text-fg">{tf.score.toFixed(3)}</span>. Red marks pixels it thinks were manipulated.
             It is shown as evidence only and never changes the decision: on our cards it also flags the genuinely pasted photo, and it misses edited text fields that the signed QR catches.</p>)}
       {view === "ela" && <p className="mt-2 text-sm text-muted">Error-level analysis: edited regions often re-compress differently and glow brighter than the rest of the card.</p>}
-      {ev.forensics && (
+      {ev.qr_kind === "aadhaar" && (
+        <div className="well mt-4 space-y-1.5 px-3.5 py-3 text-sm">
+          <div className="font-medium">Real Aadhaar: UIDAI Secure QR</div>
+          <div className="text-muted">Format <span className="mono">{ev.qr?.format ?? "secure QR"}</span> · issuer {ev.qr?.issuer ?? "UIDAI"}
+            {ev.uidai_mobile_linked != null && <> · mobile {ev.uidai_mobile_linked ? "is the one linked to this Aadhaar" : "differs from the linked one"}</>}</div>
+          {!!ev.printed_lines?.length && <div className="text-xs text-dim">Printed text read: {ev.printed_lines.slice(0, 8).join(" · ")}</div>}
+        </div>
+      )}
+      {ev.provenance?.summary && <p className={clsx("mt-3 text-sm", ev.provenance.ai ? "text-reject" : "text-muted")}>File provenance: {ev.provenance.summary}</p>}
+      {ev.forensics && !ev.forensics.not_applicable && (
         <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
           {[["Pixel forensics", ev.forensics.score], ["Texture ratio", ev.forensics.tex_ratio], ["Font deviation", ev.forensics.font_dev]].map(([k, v]) => (
             <div key={k} className="well px-3 py-2.5"><dt className="text-xs text-dim">{k}</dt><dd className="mono mt-0.5">{v}</dd></div>
@@ -360,6 +369,8 @@ function DocumentPanel({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
 
 function FaceTrio({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
   const ev = m?.evidence ?? {};
+  const aadhaarCard = c.modules.find((x) => x.module === "document")?.evidence?.qr_kind === "aadhaar";
+  const uidaiPhoto = String(ev.registry_face_url ?? "").includes("_uidai");
   const thr = ev.threshold ?? 0.35;
   const sim = (x?: number | null) => (x == null || Number.isNaN(x) ? "n/a" : x.toFixed(2));
   const ok = (x?: number | null) => x != null && !Number.isNaN(x) && x >= thr;
@@ -370,10 +381,12 @@ function FaceTrio({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
   return (
     <Section title="Face & liveness" sub={`ArcFace match threshold ${thr}, set at 0.1% false accepts`}>
       <div className="grid grid-cols-3 gap-3">
-        {[["Selfie", fileUrl(c.selfie_path)], ["Card portrait", null], ["Registry photo", fileUrl(ev.registry_face_url)]].map(([l, src], i) => (
+        {[["Selfie", fileUrl(c.selfie_path)], [aadhaarCard ? "Card (face found on it)" : "Card portrait", null],
+          [uidaiPhoto ? "UIDAI photo (signed QR)" : "Registry photo", fileUrl(ev.registry_face_url)]].map(([l, src], i) => (
           <figure key={String(l)}>
             <div className="aspect-[4/5] overflow-hidden rounded-xl border border-line bg-bg-2">
-              {i === 1 ? <div className="h-full w-full bg-cover" style={{ backgroundImage: `url(${fileUrl(c.card_path)})`, backgroundSize: "417%", backgroundPosition: "5.3% 36%" }} />
+              {i === 1 ? (aadhaarCard ? <img src={fileUrl(c.card_path)} alt="Card" className="h-full w-full object-contain" />
+                : <div className="h-full w-full bg-cover" style={{ backgroundImage: `url(${fileUrl(c.card_path)})`, backgroundSize: "417%", backgroundPosition: "5.3% 36%" }} />)
                 : src ? <img src={String(src)} alt={String(l)} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-xs text-dim">not in registry</div>}
             </div>
             <figcaption className="mt-1.5 text-center text-xs text-muted">{l}</figcaption>
@@ -391,6 +404,7 @@ function FaceTrio({ c, m }: { c: CaseDetail; m?: ModuleResult }) {
         {d.sim_to_selfie && <Pair label="Frames match the selfie" v={d.sim_to_selfie.join(" / ")} ok={!live.codes?.includes("BIO_FRAMES_INCONSISTENT")} />}
         <Pair label="Camera (browser-reported)" v={cam.length ? cam.join(", ") : "not reported"} ok={!virtual && cam.length > 0} />
         <Pair label="Same picture seen before" v={String(m?.features?.bio_media_reuse ?? 0)} ok={!(Number(m?.features?.bio_media_reuse) > 0)} />
+        {ev.provenance && <Pair label="Selfie file provenance" v={ev.provenance.ai ?? ev.provenance.summary ?? "n/a"} ok={!ev.provenance.ai} />}
         <div className="flex items-center justify-between py-2 text-xs text-dim"><span>Voice step-up {c.step_up?.voice != null && `score ${c.step_up.voice}`} (never used in the decision)</span><SimBadge /></div>
       </div>
     </Section>

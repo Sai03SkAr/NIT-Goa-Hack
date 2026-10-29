@@ -188,6 +188,8 @@ function DocStep({ card, setCard, onBack, onNext }: { card: File | null; setCard
     <div className="panel p-8">
       <h2 className="display text-[22px]">Upload your National ID card</h2>
       <p className="mt-2 text-sm text-muted">Front side, flat and fully visible. The signed QR code must be readable.</p>
+      <p className="mt-1 text-xs text-dim">Using an Aadhaar? Upload the Aadhaar letter or an e-Aadhaar printout where your photo, details and the
+        Secure QR are on the same page. It is checked offline against UIDAI&apos;s signature; only the last 4 digits are read from the QR.</p>
       <label className={clsx("mt-6 grid cursor-pointer place-items-center overflow-hidden rounded-xl border border-dashed border-line-2 bg-bg-2/60 transition hover:border-brand",
         card ? "p-3" : "h-64")}>
         <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && setCard(e.target.files[0])} />

@@ -167,6 +167,8 @@ identity reused across banks without any bank sharing customer data.
 - Pipeline: `backend/app/graph/pipeline.py` · partner API: `backend/app/partners.py`
 - Adversarial: `eval/run_attacks.py`, `eval/adaptive_attacker.py` · metrics: `eval/train.py` → `precomputed/metrics.json`
 - Cross-institution network: `backend/app/consortium.py`, member client `scripts/consortium_client.py`
+- Real Aadhaar (UIDAI Secure QR, offline): `backend/app/modules/document/aadhaar.py` (`docs/REAL_AADHAAR.md`)
+- AI-provenance (C2PA, IPTC, generator metadata): `backend/app/modules/document/provenance.py` (`docs/AI_GENERATED_IDS.md`)
 - Governed self-learning and applicant tips: `backend/app/learning.py` (`docs/LEARNING_LOOP.md`)
 - Analytics assistant (Ask TrueID / Investigator): `backend/app/llm/assistant.py` (`docs/ASSISTANT.md`)
 - Alignment & threats: `docs/VCIP_ALIGNMENT.md`, `docs/THREATS_2024_2026.md`, `docs/PARTNER_INTEGRATION.md`

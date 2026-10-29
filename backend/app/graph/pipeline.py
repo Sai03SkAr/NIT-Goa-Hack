@@ -9,11 +9,12 @@ import threading
 from datetime import datetime
 from typing import Annotated, Any, TypedDict
 
+import cv2
 import numpy as np
 from langgraph.graph import END, START, StateGraph
 
 from app import consortium, db, policy
-from app.config import LIVE_HISTORY
+from app.config import LIVE_HISTORY, UPLOADS
 from app.fusion import fraud_type, model, profile
 from app.llm.summary import summarize
 from app.modules.behavior import agent as beh
@@ -31,6 +32,7 @@ class State(TypedDict, total=False):
     card_bgr: Any
     card_raw: bytes
     selfie_bgr: Any
+    selfie_raw: bytes  # undeclared keys are dropped by LangGraph: without this the selfie AI-metadata check never ran
     frames: list
     rec: dict
     modules: Annotated[dict, operator.or_]
@@ -63,9 +65,29 @@ def document_node(s: State):
     return {"modules": {"document": {**doc.assess(ext, s["app"]["form"], _today(s)).model_dump(), "_ext": ext}}}
 
 
+def _uidai_photo(s: State):
+    """A real Aadhaar's UIDAI-signed photo (from the Secure QR), enlarged for the face model; None otherwise."""
+    q = doc.card_qr(s["card_bgr"], s.get("card_raw"))
+    if q["kind"] != "aadhaar" or q["status"] != "VALID":
+        return q, None
+    from app.modules.document import aadhaar
+    ph = aadhaar.photo_bgr((q["extras"] or {}).get("photo"))
+    if ph is None:
+        return q, None
+    # the QR photo is tiny (about 60x75 px): enlarge it and give the detector plenty of margin
+    for scale, pad in ((4, 300), (6, 200)):
+        big = cv2.resize(ph, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        im = cv2.copyMakeBorder(big, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+        if bio.F.embed(im) is not None:
+            return q, im
+    return q, None
+
+
 def biometric_node(s: State):
     a = s["app"]
-    ext = bio.extract(s["selfie_bgr"], doc.normalize(s["card_bgr"]), s.get("selfie_raw"))
+    q, uidai_face = _uidai_photo(s)
+    ext = bio.extract(s["selfie_bgr"], doc.normalize(s["card_bgr"]), s.get("selfie_raw"),
+                      card_face_bgr=s["card_bgr"] if q["kind"] == "aadhaar" else None)
     emb = ext["selfie"]["emb"] if ext["selfie"] else None
     media = ext["passive"]["dhash"]
     ch = a.get("challenge") or {}
@@ -79,6 +101,13 @@ def biometric_node(s: State):
         reg_emb, reg_url, reg_ok = registry_face(a["form"]["id_number"]), registry_face_url(a["form"]["id_number"]), True
     except RegistryUnavailable:
         reg_emb, reg_url, reg_ok = None, None, False
+    if reg_emb is None and uidai_face is not None:  # the issuer's own photo, signed inside the Aadhaar QR
+        e = bio.F.embed(uidai_face)
+        if e is not None:
+            reg_emb, reg_ok = e["emb"], True
+            p = UPLOADS / f"{a['app_id']}_uidai.jpg"  # shown to the analyst, purged with the other uploads
+            cv2.imwrite(str(p), uidai_face)
+            reg_url = f"/uploads/{p.name}"
     with Runtime.lock:
         reuse = Runtime.hist.face_matches(emb, a["form"]["name"]) | {"media": Runtime.hist.media_matches(media)}
     r = bio.assess(ext, reg_emb, live, a["device"].get("camera_labels", []), reuse, reg_url,
@@ -94,7 +123,9 @@ def behavior_node(s: State):
 
 
 def registry_node(s: State):
-    return {"modules": {"registry": regm.assess(s["app"]["form"], _today(s)).model_dump()}}
+    q = doc.card_qr(s["card_bgr"], s.get("card_raw"))
+    attested = q["payload"] if q["kind"] == "aadhaar" and q["status"] == "VALID" else None
+    return {"modules": {"registry": regm.assess(s["app"]["form"], _today(s), attested).model_dump()}}
 
 
 def correlation_node(s: State):

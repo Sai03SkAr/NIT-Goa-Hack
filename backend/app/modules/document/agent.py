@@ -8,7 +8,7 @@ import numpy as np
 
 from app.modules.correlation.fuzzy import name_sim
 from app.modules.document import card as C
-from app.modules.document import checksums, dates, forensics, ocr, qr_sign, trufor
+from app.modules.document import aadhaar, checksums, dates, forensics, ocr, provenance, qr_sign, trufor
 from app import policy as P
 from app.schemas import ModuleResult, reason
 
@@ -73,14 +73,47 @@ def _best_reading(card_bgr: np.ndarray) -> tuple[np.ndarray, dict, str]:
     return best
 
 
+_QR_CACHE: dict[str, dict] = {}
+
+
+def card_qr(card_bgr: np.ndarray, raw: bytes | None = None) -> dict:
+    """The card's QR, decoded and verified once per image (the document, face and registry steps all need it).
+    {'kind': 'trueid' | 'aadhaar' | None, 'payload', 'status', 'extras'}; Aadhaar extras hold the signed photo."""
+    import hashlib
+    key = hashlib.sha256(raw if raw else card_bgr.tobytes()).hexdigest()
+    if key not in _QR_CACHE:
+        text = qr_sign.read_qr(card_bgr)
+        if aadhaar.looks_like(text):
+            payload, status, extras = aadhaar.parse_and_verify(text)
+            out = {"kind": "aadhaar", "payload": payload, "status": status, "extras": extras}
+        else:
+            payload, status = qr_sign.parse_and_verify(text)
+            out = {"kind": "trueid" if text else None, "payload": payload, "status": status, "extras": {}}
+        if len(_QR_CACHE) > 64:
+            _QR_CACHE.pop(next(iter(_QR_CACHE)))
+        _QR_CACHE[key] = out
+    return _QR_CACHE[key]
+
+
 def extract(card_bgr: np.ndarray, raw: bytes | None = None, with_trufor=False) -> dict:
-    norm, fields, how = _best_reading(card_bgr)
-    qr_text = qr_sign.read_qr(card_bgr)
-    payload, qr_status = qr_sign.parse_and_verify(qr_text)
-    return {"qr_found": qr_text is not None, "qr_payload": payload, "qr_status": qr_status,
+    q = card_qr(card_bgr, raw)
+    payload, qr_status = q["payload"], q["status"]
+    if q["kind"] == "aadhaar":  # a real Aadhaar: not our template, so read every printed line instead of fixed boxes
+        norm = normalize(card_bgr)
+        fields, how = {k: {"text": "", "conf": 0.0} for k in SIGNED_FIELDS}, "aadhaar_lines"
+        lines = ocr.read_lines(card_bgr)
+        # the pixel forensics compare against OUR template's texture and fonts: meaningless on a different layout
+        forensic = {"score": 0.0, "tex_ratio": np.nan, "font_dev": 0.0, "contrast_dev": np.nan, "not_applicable": True}
+    else:
+        norm, fields, how = _best_reading(card_bgr)
+        lines = None
+        forensic = None
+    return {"qr_found": q["kind"] is not None, "qr_payload": payload, "qr_status": qr_status, "qr_kind": q["kind"],
+            "printed_lines": lines, "uidai_mobile_hash": (q["extras"] or {}).get("mobile_hash"),
+            "uidai_photo": bool((q["extras"] or {}).get("photo")),
             "qr_sig_ok": qr_status == qr_sign.VALID, "normalized_by": how,
-            "ocr": fields, "forensics": forensics.analyze(norm),
-            "exif_editor": forensics.exif_editor(raw), "genai_marker": forensics.genai_marker(raw),
+            "ocr": fields, "forensics": forensic or forensics.analyze(norm),
+            "exif_editor": forensics.exif_editor(raw), "provenance": provenance.inspect(raw),
             "trufor": trufor.score(card_bgr) if with_trufor else None}
 
 
@@ -88,7 +121,10 @@ def _same(field: str, a: str, b: str) -> float:
     if field == "name":
         return name_sim(a, b)
     if field == "id_number":
-        return float(re.sub(r"\D", "", a or "") == re.sub(r"\D", "", b or ""))
+        da, db = re.sub(r"\D", "", a or ""), re.sub(r"\D", "", b or "")
+        if "X" in (a or "").upper() or "X" in (b or "").upper():  # a masked ID (Aadhaar QR): only the last 4 are known
+            return float(len(da) >= 4 and len(db) >= 4 and da[-4:] == db[-4:])
+        return float(da == db)
     return float((a or "").strip().upper() == (b or "").strip().upper())
 
 
@@ -114,11 +150,19 @@ def assess(ext: dict, form: dict, today: date) -> ModuleResult:
         ev_sig = P.PASS
     f["ev_doc_signature"] = P.CODE[ev_sig]
 
+    aadhaar_card = ext.get("qr_kind") == "aadhaar"
+    if aadhaar_card:
+        R.append(reason("DOC_UIDAI_QR", 0.0))
     # signed QR <-> printed card (OCR), field by field, with OCR-confidence gating
     for k, q in SIGNED_FIELDS.items():
+        if aadhaar_card:
+            f[f"doc_ocr_conf_{k}"], f[f"doc_qr_ocr_{k}"] = 0.0, np.nan
+            continue
         f[f"doc_ocr_conf_{k}"] = conf[k]
         f[f"doc_qr_ocr_{k}"] = _same(k, qp[q], o[k]) if sig_ok else np.nan
-    if sig_ok:
+    if sig_ok and aadhaar_card:
+        ev_cons = _aadhaar_print_check(ext.get("printed_lines") or [], qp, R)
+    elif sig_ok:
         bad = [k for k in SIGNED_FIELDS if (f[f"doc_qr_ocr_{k}"] < 0.8 if k == "name" else f[f"doc_qr_ocr_{k}"] == 0)]
         # an edit is a confident read of a value that could be real: a misread digit breaks the ID checksum and a
         # misread date does not parse, but a forger's printed replacement passes both (measured: genuine card
@@ -147,6 +191,12 @@ def assess(ext: dict, form: dict, today: date) -> ModuleResult:
         R.append(reason("DOC_FORM_MISMATCH", 0.3))
     f["ev_form_consistency"] = P.CODE[P.PASS if form_ok else P.FAIL]
 
+    if aadhaar_card and sig_ok and ext.get("uidai_mobile_hash") is not None:  # informational: numbers change
+        linked = aadhaar.hash_matches(form.get("phone", ""), ext["uidai_mobile_hash"], qp.get("id_last4", "0")[-1:] or "0")
+        f["doc_uidai_mobile_linked"] = float(bool(linked))
+        if linked is False:
+            R.append(reason("DOC_UIDAI_MOBILE_OTHER", 0.05))
+
     ck_ok = checksums.verhoeff_valid(form["id_number"])
     f["doc_checksum_ok"] = float(ck_ok)
     if not ck_ok:  # could be a typo: review, not an automatic fraud verdict
@@ -173,10 +223,12 @@ def assess(ext: dict, form: dict, today: date) -> ModuleResult:
         R.append(reason("DOC_TRUFOR_HIGH", tf * 0.3))
     if ext.get("exif_editor"):
         R.append(reason("DOC_EXIF_EDITOR", 0.1))
-    f["meta_genai_card"] = float(bool(ext.get("genai_marker")))  # 'meta_' = policy only, never a model feature
-    if ext.get("genai_marker"):
+    prov = ext.get("provenance") or {"ai": ext.get("genai_marker")}
+    f["meta_genai_card"] = float(bool(prov.get("ai")))  # 'meta_' = policy only, never a model feature
+    if prov.get("ai"):
         R.append(reason("DOC_GENAI_METADATA", 0.4))
-    ocr_conf = float(np.mean(list(conf.values())))
+    ocr_conf = float(np.mean(list(conf.values()))) if not aadhaar_card else \
+        float(np.mean(sorted([x["conf"] for x in ext.get("printed_lines") or []], reverse=True)[:5] or [0.0]))  # the clearest lines
     f["doc_ocr_conf"] = ocr_conf
 
     cons = [f[f"doc_qr_ocr_{k}"] for k in SIGNED_FIELDS if not np.isnan(f[f"doc_qr_ocr_{k}"])]
@@ -190,5 +242,21 @@ def assess(ext: dict, form: dict, today: date) -> ModuleResult:
                         reasons=R, features=f, latency_ms=int((time.time() - t0) * 1000),
                         evidence={"ocr": o, "ocr_conf": conf, "qr": qp, "qr_status": qs, "qr_signature_valid": sig_ok,
                                   "forensics": fz, "trufor": tf, "exif_editor": ext.get("exif_editor"),
-                                  "genai_marker": ext.get("genai_marker"),
-                                  "normalized_by": ext.get("normalized_by")})
+                                  "genai_marker": prov.get("ai"), "provenance": prov,
+                                  "normalized_by": ext.get("normalized_by"), "qr_kind": ext.get("qr_kind"),
+                                  "printed_lines": [x["text"] for x in ext.get("printed_lines") or []][:20] or None,
+                                  "uidai_mobile_linked": None if "doc_uidai_mobile_linked" not in f else bool(f["doc_uidai_mobile_linked"])})
+
+
+def _aadhaar_print_check(lines: list[dict], qp: dict, R: list) -> str:
+    """Does the printed Aadhaar show the name, date of birth and last 4 digits that UIDAI signed? Layout-free, so a
+    miss means "a person should compare" (UNAVAILABLE), never an automatic forgery verdict."""
+    text = [x["text"] for x in lines if x["conf"] >= 0.3]
+    joined = " ".join(text)
+    name_ok = any(name_sim(qp["n"], t.upper()) >= 0.8 for t in text)
+    dob_ok = bool(qp["d"]) and re.sub(r"\D", "", qp["d"]) in re.sub(r"\D", "", joined)
+    id_ok = bool(qp.get("id_last4")) and qp["id_last4"] in re.sub(r"\s", "", joined)
+    if name_ok and dob_ok and id_ok:
+        return P.PASS
+    R.append(reason("DOC_OCR_UNREADABLE", 0.1))
+    return P.UNAVAILABLE

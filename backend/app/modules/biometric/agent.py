@@ -13,11 +13,15 @@ from app.schemas import ModuleResult, reason
 VIRTUAL_TOKENS = ("virtual", "obs", "manycam", "xsplit", "snap camera", "droidcam", "vcam", "splitcam")
 
 
-def extract(selfie_bgr: np.ndarray, card_norm_bgr: np.ndarray, selfie_raw: bytes | None = None) -> dict:
-    from app.modules.document.forensics import genai_marker
+def extract(selfie_bgr: np.ndarray, card_norm_bgr: np.ndarray, selfie_raw: bytes | None = None,
+            card_face_bgr: np.ndarray | None = None) -> dict:
+    """card_face_bgr: where to look for the printed portrait when the card is not our template (a real Aadhaar:
+    the whole card, largest face wins)."""
+    from app.modules.document import provenance
     s = F.embed(selfie_bgr)
-    c = F.embed(F.card_portrait(card_norm_bgr))
-    return {"selfie": s, "card": c, "passive": F.passive(selfie_bgr), "genai_marker": genai_marker(selfie_raw)}
+    c = F.embed(card_face_bgr if card_face_bgr is not None else F.card_portrait(card_norm_bgr))
+    prov = provenance.inspect(selfie_raw)
+    return {"selfie": s, "card": c, "passive": F.passive(selfie_bgr), "genai_marker": prov["ai"], "provenance": prov}
 
 
 TURN_DELTA = 0.07  # nose-between-eyes shift vs the neutral frame; frontal jitter is ~0.02
@@ -200,4 +204,4 @@ def assess(ext: dict, registry_emb, live: dict, camera_labels: list[str], reuse:
                         latency_ms=int((time.time() - t0) * 1000),
                         evidence={"threshold": thr, "sim_card": f["bio_sim_card"], "sim_registry": f["bio_sim_registry"],
                                   "liveness": live, "passive": p, "reuse": reuse, "camera": labels,
-                                  "registry_face_url": registry_face_url})
+                                  "registry_face_url": registry_face_url, "provenance": ext.get("provenance")})

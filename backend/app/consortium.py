@@ -134,6 +134,18 @@ def record(institution: str, toks: dict, name_token: str, outcome: str = "", ref
         s.commit()
 
 
+def forget(institution: str, ref: str) -> int:
+    """Right to erasure: remove what this application contributed to the network. Returns the rows deleted."""
+    ref_h = hashlib.sha256(f"{institution}:{ref}".encode()).hexdigest()[:24]
+    with db.session() as s:
+        rows = s.exec(select(ConsortiumSignal).where(ConsortiumSignal.institution == institution,
+                                                     ConsortiumSignal.ref == ref_h)).all()
+        for r in rows:
+            s.delete(r)
+        s.commit()
+    return len(rows)
+
+
 def stats() -> dict:
     with db.session() as s:
         rows = s.exec(select(ConsortiumSignal)).all()

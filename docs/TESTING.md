@@ -110,6 +110,9 @@ Do it in this order. Sit alone in the frame with your face lit from the front.
 | Learning loop | **Run a learning cycle** lists proposals; applying a band change moves the live cut-offs and **Roll back** restores them; Drift, Feedback, Applicant coaching and History tabs load. See `docs/LEARNING_LOOP.md` |
 | Case page, **TruFor** tab | Heatmap + score in about a second (the model preloads at startup). On a DOB-edited card it lights the photo and misses the date: expected, that is the point |
 | Case page, **Erase applicant data** | Record, images and graph entry deleted; the queue no longer shows it |
+| Real Aadhaar (`docs/REAL_AADHAAR.md`) | With UIDAI's certificate in `data/issuer_keys/uidai/`: Document tab says **UIDAI signature valid**, lists the printed text read and whether the mobile is the linked one; Face tab shows **UIDAI photo (signed QR)** next to the selfie; PAN shows *could not check*. Erase the case afterwards |
+| AI-generated selfie | A selfie carrying an AI C2PA credential fails *Photos are new and carry no AI-generator marker*; the Face tab's *Selfie file provenance* names the generator (`docs/AI_GENERATED_IDS.md`) |
+| Demo card for a named person | `scripts/make_person_card.py --photo … --name … --dob … --gender …`, restart the backend, then apply at `/kyc` with `details.json`: every required check passes except liveness until the live head-turn is done |
 | Applicant result page | Plain message and next step only, plus **What you can do** tips when a fixable check held the case (never fraud signals); switch on "Technical details" to see codes and scores |
 
 ## Resetting

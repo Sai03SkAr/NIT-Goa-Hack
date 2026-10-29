@@ -41,6 +41,7 @@ Governed self-learning (TrueID proposes band, model and coaching improvements fr
 Research from IDRBT (the RBI's banking-technology institute) adapted to KYC: label-free genuine-profile rules, one-shot federated learning across banks, a chaotic-VAE generative attacker and per-case counterfactuals: **[docs/IDRBT_INNOVATION.md](docs/IDRBT_INNOVATION.md)**.
 
 Optional, consented digital-footprint check (email and phone age, a linked Google/LinkedIn account) that only flags contradictions with the KYC details, never a missing footprint: **[docs/DIGITAL_FOOTPRINT.md](docs/DIGITAL_FOOTPRINT.md)**.
+Real Aadhaar, verified offline through UIDAI's signed Secure QR (signature, printed text, UIDAI's photo vs the selfie, linked mobile): **[docs/REAL_AADHAAR.md](docs/REAL_AADHAAR.md)**. Fully AI-generated IDs and selfies (issuer signatures, C2PA content credentials, SynthID status): **[docs/AI_GENERATED_IDS.md](docs/AI_GENERATED_IDS.md)**. A signed demo card for a named person from their photo: `scripts/make_person_card.py`.
 Analytics assistant (floating **Ask TrueID** panel + Investigator page; optional Groq / xAI Grok wording, grounded in live data): **[docs/ASSISTANT.md](docs/ASSISTANT.md)**. Latest state and hand-off: **[docs/HANDOFF_2026-10-29.md](docs/HANDOFF_2026-10-29.md)**.
 
 ## Testing

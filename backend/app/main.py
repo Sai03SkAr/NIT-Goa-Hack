@@ -498,13 +498,17 @@ def _card_image(app_id: str):
 
 @app.delete("/api/apps/{app_id}")
 def erase(app_id: str, request: Request):
-    """Right to erasure (DPDP Act 2023): delete the application, its images and its graph record; keep an audit stub."""
+    """Right to erasure (DPDP Act 2023): delete the application, its images, its graph record and what it contributed
+    to the cross-institution network; keep an audit stub."""
+    from app import consortium
     with db.session() as s:
         r = s.get(db.Application, app_id)
         if not r:
             raise HTTPException(404)
+        institution = consortium.institution_of({"source": r.source})
         s.delete(r)
         s.commit()
+    consortium.forget(institution, app_id)
     db.audit(None, app_id, "erased", "applicant data deleted on request", S.analyst_actor(request))
     for f in UPLOADS.glob(f"{app_id}_*"):
         f.unlink()

@@ -58,19 +58,12 @@ def ela_heatmap(card_bgr: np.ndarray, quality=90) -> np.ndarray:
     return cv2.addWeighted(card_bgr, 0.5, heat, 0.5, 0)
 
 
-# IPTC "digital source type" values that generators (and honest editors) write for AI-made media, plus generator names
-GENAI_MARKERS = (b"trainedalgorithmicmedia", b"compositewithtrainedalgorithmicmedia", b"algorithmicmedia",
-                 b"midjourney", b"dall-e", b"dall\xc2\xb7e", b"stable diffusion", b"stablediffusion", b"adobe firefly",
-                 b"gpt-image", b"imagen", b"flux.1", b"ideogram", b"leonardo.ai")
-
-
 def genai_marker(raw: bytes | None) -> str | None:
-    """Generator / AI-provenance marker in the file's metadata. Presence is strong; ABSENCE PROVES NOTHING
-    (metadata is trivially stripped). C2PA alone is not a marker: real phone cameras sign photos with it too."""
-    if not raw:
-        return None
-    blob = raw[:262144].lower()  # metadata segments sit at the start of JPEG/PNG/WebP files
-    return next((m.decode("utf-8", "ignore") for m in GENAI_MARKERS if m in blob), None)
+    """Why the file is AI-made according to its provenance (C2PA content credentials, IPTC source type, generator
+    metadata), or None. Presence is strong; ABSENCE PROVES NOTHING (metadata is trivially stripped). A camera's own
+    C2PA signature is not a marker. Details: app/modules/document/provenance.py."""
+    from app.modules.document import provenance
+    return provenance.inspect(raw)["ai"]
 
 
 def dhash(img_bgr: np.ndarray) -> int:

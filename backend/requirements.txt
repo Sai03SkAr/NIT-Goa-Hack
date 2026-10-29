@@ -17,6 +17,7 @@ pillow
 opencv-python-headless
 qrcode
 cryptography
+c2pa-python  # reads C2PA content credentials (AI-provenance); optional, see app/modules/document/provenance.py
 easyocr
 insightface
 onnxruntime

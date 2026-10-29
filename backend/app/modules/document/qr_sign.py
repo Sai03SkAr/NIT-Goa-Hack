@@ -160,4 +160,18 @@ def read_qr(img_bgr: np.ndarray) -> str | None:
                 continue
             if text:
                 return text
+    return _read_zxing(img_bgr)
+
+
+def _read_zxing(img_bgr: np.ndarray) -> str | None:
+    """zxing-cpp reads dense codes (a real Aadhaar Secure QR is version 25+) that OpenCV misses in phone photos."""
+    try:
+        import zxingcpp
+    except ImportError:
+        return None
+    g = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    for im in (g, cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC) if max(g.shape) < 2000 else g):
+        for r in zxingcpp.read_barcodes(im):
+            if r.text and r.format == zxingcpp.BarcodeFormat.QRCode:
+                return r.text
     return None

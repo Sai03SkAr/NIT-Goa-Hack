@@ -11,7 +11,9 @@ from app.modules.registry import mocks
 from app.schemas import ModuleResult, reason
 
 
-def assess(form: dict, today: date) -> ModuleResult:
+def assess(form: dict, today: date, attested: dict | None = None) -> ModuleResult:
+    """attested: identity fields signed by the issuer (a verified Aadhaar Secure QR). Used when the person is not in
+    the demo registry: UIDAI's signature is then the registry answer."""
     t0 = time.time()
     R, f = [], {}
     try:
@@ -26,6 +28,15 @@ def assess(form: dict, today: date) -> ModuleResult:
     if not available:
         f["reg_name_sim"] = f["reg_dob_match"] = np.nan
         ev_id = P.UNAVAILABLE
+    elif u is None and attested:
+        R.append(reason("REG_UIDAI_ATTESTED", 0.0))
+        f["reg_name_sim"] = name_sim(form["name"], attested["n"])
+        f["reg_dob_match"] = float(parse(form["dob"]) is not None and parse(form["dob"]) == parse(attested["d"]))
+        if f["reg_name_sim"] < 0.8:
+            R.append(reason("REG_NAME_MISMATCH", 0.35))
+        if not f["reg_dob_match"]:
+            R.append(reason("REG_DOB_MISMATCH", 0.3))
+        ev_id = P.PASS if f["reg_name_sim"] >= 0.8 and f["reg_dob_match"] else P.FAIL
     elif u is None:
         R.append(reason("REG_ID_NOT_FOUND", 0.5))
         f["reg_name_sim"], f["reg_dob_match"] = 0.0, 0.0
@@ -47,6 +58,8 @@ def assess(form: dict, today: date) -> ModuleResult:
     f["reg_pan_link_ok"] = float(subject_ok and person_ok)
     if not available:
         ev_pan = P.UNAVAILABLE
+    elif p is None and attested and u is None:  # a real person: the demo tax registry can't know their PAN
+        R.append(reason("REG_PAN_UNVERIFIABLE", 0.0)); ev_pan = P.UNAVAILABLE
     elif p is None:
         R.append(reason("REG_PAN_NOT_FOUND", 0.2)); ev_pan = P.FAIL
     elif not subject_ok:

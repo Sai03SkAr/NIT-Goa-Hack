@@ -117,3 +117,17 @@ def test_reference_client_hashes_exactly_like_the_server():
                     ("email", "Riya.Kamat@Example.com"), ("device", "D1a2b3c4d5"), ("account", "4002-1187-650"),
                     ("name", "Mohd Shaikh"), ("name", "riya  kamat")]:
         assert cc.token(kind, v, CONSORTIUM_KEY) == C.token(kind, v), (kind, v)
+
+
+def test_erasure_also_removes_the_applications_network_signals(client):
+    """DPDP right to erasure: deleting an applicant must take back what they contributed to the network."""
+    from app import consortium, db
+    toks = {"id_number": "a" * 40, "phone": "b" * 40}
+    consortium.record("trueid", toks, "c" * 40, outcome="REVIEW", ref="LERASE001")
+    with db.session() as s:
+        s.add(db.Application(app_id="LERASE001", ts="2026-10-29T10:00:00", source="live", name="Erase Me"))
+        s.commit()
+    assert consortium.check("kestrel", toks, "d" * 40)["seen_elsewhere"]
+    r = client.delete("/api/apps/LERASE001", headers={"X-Analyst-Key": "test-analyst-key"})
+    assert r.status_code == 200
+    assert not consortium.check("kestrel", toks, "d" * 40)["seen_elsewhere"]

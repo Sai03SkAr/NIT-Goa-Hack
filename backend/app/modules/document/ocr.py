@@ -29,6 +29,27 @@ def read_fields(card_norm_bgr: np.ndarray) -> dict:
     return out
 
 
+def read_lines(img_bgr: np.ndarray, max_lines: int = 40) -> list[dict]:
+    """Every text line on a card whose layout we don't know: lines are found by dilating ink horizontally, then
+    each is read by the same recogniser (no detector model needed). [{'text', 'conf'}], top to bottom."""
+    g = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    if max(g.shape) > 1600:
+        s = 1600 / max(g.shape)
+        g = cv2.resize(g, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+    ink = cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 15)
+    blob = cv2.dilate(ink, cv2.getStructuringElement(cv2.MORPH_RECT, (max(15, g.shape[1] // 40), 3)))
+    n, _, stats, _ = cv2.connectedComponentsWithStats(blob)
+    boxes = []
+    for x, y, w, h, area in stats[1:]:
+        if 10 <= h <= g.shape[0] // 6 and w >= 2 * h and w > 30:  # text-line shaped, not a photo or the QR
+            boxes.append([int(x) - 4, int(x + w) + 4, int(y) - 3, int(y + h) + 3])
+    boxes = sorted(boxes, key=lambda b: (b[2], b[0]))[:max_lines]
+    if not boxes:
+        return []
+    res = reader().recognize(g, horizontal_list=boxes, free_list=[], detail=1)
+    return [{"text": t.strip(), "conf": round(float(c), 3)} for _, t, c in res if t.strip()]
+
+
 def clean(field: str, t: str) -> str:
     t = t.strip()
     if field == "id_number":
