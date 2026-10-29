@@ -528,6 +528,21 @@ def trufor_check(app_id: str):
     return trufor.analyze(doc_normalize(_card_image(app_id)))
 
 
+@app.get("/api/apps/{app_id}/counterfactual")
+def counterfactual(app_id: str):
+    """What would change this decision (applicant-controllable search + blocking evidence). Analyst-only: it would
+    tell an attacker what to change, so it is never part of an applicant or partner response."""
+    from app.fusion import counterfactual as CF
+    with db.session() as s:
+        r = s.get(db.Application, app_id)
+        if not r:
+            raise HTTPException(404)
+        feats = {}
+        for m in r.modules or []:
+            feats.update({k: (float("nan") if v is None else v) for k, v in (m.get("features") or {}).items()})
+    return P.jsonable(CF.explain(feats, P.Runtime.bands))
+
+
 @app.get("/api/graph")
 def graph(app_id: str | None = None, hops: int = 2, min_size: int = 3):
     """Strong-edge identity graph. With app_id: its neighbourhood; else all components >= min_size."""
@@ -604,7 +619,9 @@ def metrics(request: Request):
     prov = {k: man.get(k) for k in ("policy_version", "feature_schema_version", "git_commit", "evaluation_kind", "split")}
     if not S.is_analyst(request):
         return {"metrics": {k: m[k] for k in PUBLIC_METRICS if k in m}, "provenance": prov}
-    return {"metrics": m, "ablation": _json("ablation.json"), "provenance": prov}
+    fed = PRE / "federated.json"  # eval/federated_profile.py (one-shot federated genuine profile)
+    return {"metrics": m, "ablation": _json("ablation.json"), "provenance": prov,
+            "federated": json.loads(fed.read_text()) if fed.exists() else None}
 
 
 # ------------------------------------------------------------------ learning loop (analyst-only, see app/learning.py)

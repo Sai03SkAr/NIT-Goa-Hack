@@ -72,6 +72,7 @@ REASONS: dict[str, str] = {
     "COR_NET_DEVICE_MANY": "This device onboarded several different people at other institutions this week",
     # policy
     "MODEL_UNAVAILABLE": "Risk model not loaded or out of date; a human decides",
+    "PROFILE_OUTLIER": "Unlike every pattern learnt from genuine applicants (one-class rules); shown to analysts, never decides",
 }
 
 STATUS_TEXT = {"FAIL": "failed", "UNAVAILABLE": "could not be checked", "NOT_PROVIDED": "was not provided",

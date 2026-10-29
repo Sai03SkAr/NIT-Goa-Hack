@@ -150,6 +150,37 @@ def manifest(feats, n_tr, n_ca, n_te):
             "versions": {"xgboost": xgb.__version__, "numpy": np.__version__, "pandas": pd.__version__}}
 
 
+def genuine_profile(tr, ca, te, feats):
+    """IDRBT-style explainable one-class rules, learnt from genuine applicants only (app/fusion/profile.py), and the
+    zero-day test: retrain the model without one fraud type, then see who catches that unseen type."""
+    from app.fusion import profile
+    G = tr[tr.label == 0][feats].astype(float).values
+    P = profile.calibrate(profile.fit(G, feats), ca[ca.label == 0][feats].astype(float).values)
+    profile.save(P)
+    s_te, _, _ = profile.score(P, te[feats].astype(float).values)
+    y = te.label.values
+    out = s_te > P["threshold"]
+    gp = {"roc_auc_no_fraud_labels": round(roc_auc_score(y, s_te), 4), "genuine_outside": round(float(out[y == 0].mean()), 4),
+          "fraud_outside": round(float(out[y == 1].mean()), 4), "threshold": round(P["threshold"], 2), "clusters": len(P["sizes"]),
+          "trained_on": f"{len(G)} genuine training applicants, no fraud labels",
+          "role": "informational: explains and monitors, never decides"}
+    zd = []
+    for t in sorted(set(tr.fraud_type) - {"genuine", "hard_negative"}):
+        trT, caT = tr[tr.fraud_type != t], ca[ca.fraud_type != t]
+        mm = fit(trT, feats)
+        pi = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(proba(mm, caT, feats), caT.label.values).predict(proba(mm, te, feats))
+        bands, _ = policy_bands(te, pi)
+        mT = (te.fraud_type == t).values
+        if not mT.any():
+            continue
+        zd.append({"type": t, "n_test": int(mT.sum()), "model_only": round(float((pi[mT] >= BANDS["approve_below"]).mean()), 3),
+                   "profile_only": round(float(out[mT].mean()), 3),
+                   "live_system": round(float(np.mean([b != "APPROVE" for b, k in zip(bands, mT) if k])), 3)})
+    print("genuine profile:", gp)
+    print("zero-day (type unseen in training):", zd)
+    return gp, zd
+
+
 def main():
     df, feats = load()
     tr, ca, te = split(df)
@@ -205,6 +236,8 @@ def main():
         run(f"all except {g}", [c for c in feats if not c.startswith(pre)])
     run("fused (all modules)", feats)
     run("fused + evidence policy", feats, rules=True)
+
+    res["genuine_profile"], res["zero_day"] = genuine_profile(tr, ca, te, feats)
 
     m.save_model(MODELS / "xgb.json")
     joblib.dump(iso, MODELS / "calibrator.joblib")

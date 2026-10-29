@@ -102,6 +102,9 @@ def main(workers=4, n_genuine=100):
     adaptive = PRE / "adaptive.json"
     if adaptive.exists():
         results.append(json.loads(adaptive.read_text()))
+    vae = PRE / "vae_attack.json"  # eval/vae_attacker.py (IDRBT chaotic-VAE generative attacker)
+    if vae.exists():
+        results.append(json.loads(vae.read_text())["entry"])
     (PRE / "attacks.json").write_text(json.dumps({"n_sample": int(len(sample)), "n_fraud": int(y.sum()),
                                                   "evaluation_kind": "offline re-extraction on synthetic test-split images; "
                                                                      "liveness is a generator-labelled fixture",

@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app import consortium, db, policy
 from app.config import LIVE_HISTORY
-from app.fusion import fraud_type, model
+from app.fusion import fraud_type, model, profile
 from app.llm.summary import summarize
 from app.modules.behavior import agent as beh
 from app.modules.biometric import agent as bio
@@ -120,13 +120,30 @@ def network_module(app: dict) -> dict:
                         evidence={"alerts": r["alerts"], "seen_at_other_institutions": r["seen_elsewhere"]}).model_dump()
 
 
+def profile_module(feats: dict) -> dict | None:
+    """Genuine-applicant profile (app/fusion/profile.py, after IDRBT's explainable one-class rules): informational."""
+    from app.schemas import ModuleResult, reason
+    r = profile.assess(feats)
+    if r is None:
+        return None
+    st = policy.FAIL if r["outside"] else policy.PASS
+    return ModuleResult(module="profile", risk=round(min(1.0, r["score"] / (2 * r["threshold"])), 3) if r["threshold"] else 0.0,
+                        reasons=[reason("PROFILE_OUTLIER", 0.0)] if r["outside"] else [],
+                        features={"ev_profile": policy.CODE[st]}, evidence=r).model_dump()
+
+
 def fusion_node(s: State):
     feats = {}
     for m in s["modules"].values():
         feats.update(m["features"])
     net = network_module(s["app"])
     feats.update(net["features"])
-    return {"feats": feats, "decision": model.decide(feats, Runtime.bands), "modules": {"network": net}}
+    mods = {"network": net}
+    prof = profile_module(feats)
+    if prof:
+        feats.update(prof["features"])
+        mods["profile"] = prof
+    return {"feats": feats, "decision": model.decide(feats, Runtime.bands), "modules": mods}
 
 
 def route(s: State):

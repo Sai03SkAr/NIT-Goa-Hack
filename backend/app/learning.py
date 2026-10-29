@@ -618,7 +618,7 @@ def tips_for(r, rows=None) -> dict:
     items, manual = [], False
     for e in r.evidence or []:
         c, stt = e["check"], e["status"]
-        if stt == "PASS" or stt == "SIMULATED":
+        if stt == "PASS" or stt == "SIMULATED" or c == "profile":  # the genuine profile explains, never holds
             continue
         if c in FIXABLE_STATUS and stt in FIXABLE_STATUS[c]:
             title, steps = TIPS[c]

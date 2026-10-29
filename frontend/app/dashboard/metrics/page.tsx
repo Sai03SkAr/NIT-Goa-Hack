@@ -1,4 +1,5 @@
 "use client";
+import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
@@ -6,8 +7,8 @@ import { PageHeader, Section, Stat, TYPE_COLORS, featureLabel, pct } from "@/com
 import { get, post } from "@/lib/api";
 import { AXIS, BRAND, BRAND_2, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
 
-type View = "overview" | "patterns" | "checks" | "thresholds" | "method";
-const VIEWS: [View, string][] = [["overview", "Overview"], ["patterns", "By fraud pattern"], ["checks", "What each check adds"], ["thresholds", "Thresholds"], ["method", "How it was measured"]];
+type View = "overview" | "patterns" | "checks" | "unseen" | "thresholds" | "method";
+const VIEWS: [View, string][] = [["overview", "Overview"], ["patterns", "By fraud pattern"], ["checks", "What each check adds"], ["unseen", "Unseen fraud"], ["thresholds", "Thresholds"], ["method", "How it was measured"]];
 const TYPE_NAME: Record<string, string> = { ring: "Synthetic ring", first_party: "First-party / Frankenstein", third_party: "Third-party fabricated",
   bot: "Bot / scripted", tampered: "Tampered document", injection: "Capture replay", mule: "Possible mule" };
 
@@ -171,6 +172,8 @@ export default function Metrics() {
         {cfg ? <BandsEditor cfg={cfg} /> : <Section title="Decision bands"><p className="text-sm text-dim">Configuration not available.</p></Section>}
       </div>}
 
+      {view === "unseen" && <Unseen m={m} fed={d.federated} />}
+
       {view === "method" && <Section title="How these numbers were made">
         <div className="max-w-3xl space-y-3 text-sm leading-relaxed text-muted">
           <p><span className="font-medium text-fg">What counts as a flag. </span>{m.definition}.</p>
@@ -214,5 +217,51 @@ function BandsEditor({ cfg }: { cfg: any }) {
       <p className="mt-3 text-xs text-dim">Between the two, cases go to review. Evidence rules still hold or reject a case whatever its score.</p>
       <button className="btn btn-primary mt-4 w-full" onClick={() => post("/api/config/bands", b).then(() => setSaved(true))}>{saved ? "Saved" : "Apply"}</button>
     </Section>
+  );
+}
+
+/** Zero-day fraud, the label-free genuine profile and its federated version (docs/IDRBT_INNOVATION.md). */
+function Unseen({ m, fed }: { m: any; fed: any }) {
+  const zd: any[] = m.zero_day ?? [], gp = m.genuine_profile;
+  const cell = (v: number) => <span className={clsx("mono", v >= 0.9 ? "text-approve" : v >= 0.5 ? "text-review" : "text-reject")}>{pct(v, 0)}</span>;
+  return (
+    <div className="space-y-5">
+      <Section title="Fraud the model has never seen" sub="Retrain without one fraud type, then test on that type">
+        {zd.length ? <>
+          <div className="grid grid-cols-[minmax(130px,1.2fr)_repeat(3,minmax(80px,1fr))] gap-x-4 gap-y-2 text-sm">
+            <span className="text-xs text-dim">Unseen type</span><span className="text-xs text-dim">Model alone</span>
+            <span className="text-xs text-dim">Genuine profile alone</span><span className="text-xs text-dim">Live system</span>
+            {zd.map((r) => [<span key={r.type}>{TYPE_NAME[r.type] ?? r.type} <span className="text-xs text-dim">({r.n_test})</span></span>,
+              <span key={r.type + "m"}>{cell(r.model_only)}</span>, <span key={r.type + "p"}>{cell(r.profile_only)}</span>, <span key={r.type + "l"}>{cell(r.live_system)}</span>])}
+          </div>
+          <p className="mt-3 max-w-3xl text-xs text-dim">A trained model only knows fraud it was shown. The genuine profile never saw any fraud, and the evidence policy checks facts
+            an attacker can't fake: three layers that cover each other's blind spots.</p>
+        </> : <p className="text-sm text-dim">Run the build to compute this table.</p>}
+      </Section>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Section title="Genuine profile" sub="Explainable one-class rules, after IDRBT (COMSNETS 2025)">
+          {gp ? <div className="space-y-2 text-sm">
+            <p>Learnt from {gp.trained_on}.</p>
+            <p>ROC-AUC <span className="mono">{gp.roc_auc_no_fraud_labels.toFixed(3)}</span> · outside the profile: <span className="mono text-reject">{pct(gp.fraud_outside, 0)}</span> of fraud,
+              <span className="mono text-review"> {pct(gp.genuine_outside, 1)}</span> of genuine.</p>
+            <p className="text-xs text-dim">Works for a bank with no labelled fraud yet. Shown on every case as readable rules; it never decides,
+              because as a gate it held more genuine people without catching more fraud.</p>
+          </div> : <p className="text-sm text-dim">Not trained yet.</p>}
+        </Section>
+        <Section title="Banks learning together" sub="One-shot federation, after IDRBT's FedPNN">
+          {fed?.rows ? <>
+            <ul className="divide-y divide-line text-[13.5px]">
+              {fed.rows.map((r: any) => (
+                <li key={r.setting} className="flex items-baseline justify-between gap-3 py-2">
+                  <span className="leading-snug">{r.setting}</span>
+                  <span className="mono shrink-0 text-xs">AUC {r.roc_auc.toFixed(3)} · fraud {pct(r.fraud_outside, 0)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-dim">Each bank shares only cluster summaries, never a customer row. {fed.note}</p>
+          </> : <p className="text-sm text-dim">Run eval/federated_profile.py to compute this.</p>}
+        </Section>
+      </div>
+    </div>
   );
 }

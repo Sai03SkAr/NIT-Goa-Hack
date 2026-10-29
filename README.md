@@ -38,6 +38,7 @@ liveness) and **Meridian Bank** (HDFC InstaAccount-style, port 3012, uploaded se
 Setup and end-to-end testing: **[docs/PARTNER_INTEGRATION.md](docs/PARTNER_INTEGRATION.md)**; check the connection with `python scripts/check_partner_connection.py`.
 Cross-institution fraud network (banks share keyed hashes, never customer data): `backend/app/consortium.py`, member client `scripts/consortium_client.py`. Mentor/judge summaries: **[docs/DELIVERABLES_PS3.md](docs/DELIVERABLES_PS3.md)**, **[docs/ONE_PAGER.md](docs/ONE_PAGER.md)**.
 Governed self-learning (TrueID proposes band, model and coaching improvements from analyst outcomes; nothing changes without an analyst; applicants get tips for fixable issues only): **[docs/LEARNING_LOOP.md](docs/LEARNING_LOOP.md)**.
+Research from IDRBT (the RBI's banking-technology institute) adapted to KYC: label-free genuine-profile rules, one-shot federated learning across banks, a chaotic-VAE generative attacker and per-case counterfactuals: **[docs/IDRBT_INNOVATION.md](docs/IDRBT_INNOVATION.md)**.
 Analytics assistant (floating **Ask TrueID** panel + Investigator page; optional Groq / xAI Grok wording, grounded in live data): **[docs/ASSISTANT.md](docs/ASSISTANT.md)**. Latest state and hand-off: **[docs/HANDOFF_2026-10-29.md](docs/HANDOFF_2026-10-29.md)**.
 
 ## Testing

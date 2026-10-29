@@ -27,6 +27,8 @@ $PY eval/build_dataset.py "$WORKERS"
 $PY eval/augment.py
 $PY eval/train.py
 $PY eval/adaptive_attacker.py
+$PY eval/vae_attacker.py
+$PY eval/federated_profile.py
 $PY eval/run_attacks.py "$WORKERS"
 $PY eval/seed_db.py
 echo "build complete"

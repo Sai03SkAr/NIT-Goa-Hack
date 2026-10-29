@@ -33,7 +33,10 @@ REQUIRED = {
 INFORMATIONAL = {"voice": ("Voice step-up", "simulated"),
                  "location": ("GPS location captured for the session (RBI V-CIP geo-tag)", "client-reported"),
                  "ip_region": ("Applicant network location", "server"),
-                 "network": ("No conflict in the cross-institution fraud network (hashed identifiers)", "consortium")}
+                 "network": ("No conflict in the cross-institution fraud network (hashed identifiers)", "consortium"),
+                 # explains and monitors, never decides (docs/IDRBT_INNOVATION.md: as a gate it held more genuine
+                 # applicants without catching more fraud, so it stays outside the decision rules and POLICY_VERSION)
+                 "profile": ("Inside the patterns learnt from genuine applicants (one-class rules)", "server")}
 
 
 def status(feats: dict, check: str) -> str:

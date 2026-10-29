@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import db, policy  # noqa: E402
 from app.config import DB_PATH, GEN, LIVE_HISTORY, PRE  # noqa: E402
 from app.fusion import fraud_type, model  # noqa: E402
-from app.graph.pipeline import jsonable  # noqa: E402
+from app.graph.pipeline import jsonable, profile_module  # noqa: E402
 from app.llm.summary import template  # noqa: E402
 
 
@@ -25,6 +25,10 @@ def main():
             feats = {}
             for m in mods:
                 feats.update({k: (float("nan") if v is None else v) for k, v in m["features"].items()})
+            prof = profile_module(feats)  # genuine-profile rules, same as live (informational)
+            if prof:
+                feats.update(prof["features"])
+                mods = mods + [prof]
             d = model.decide(feats)
             ft = fraud_type.classify(feats) if d["band"] != "APPROVE" else "none"
             act = fraud_type.action(ft)

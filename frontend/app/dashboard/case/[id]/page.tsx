@@ -18,6 +18,7 @@ const MOD: Record<string, { label: string; tab: Tab; icon: any }> = {
   registry: { label: "Registry", tab: "overview", icon: Fingerprint },
   correlation: { label: "Linked apps", tab: "linked", icon: Network },
   network: { label: "Other banks", tab: "linked", icon: Building2 },
+  profile: { label: "Genuine profile", tab: "overview", icon: Sparkles },
 };
 
 export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
@@ -57,6 +58,10 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
             <Consistency c={c} />
             <EvidencePanel checks={c.evidence ?? []} policy={c.policy_version} />
             <ShapPanel shap={c.shap} />
+            <div className="grid gap-5 lg:grid-cols-2">
+              <GenuineProfile m={mod("profile")} />
+              <Counterfactual id={c.app_id} />
+            </div>
             <Section title="All findings" sub="Grouped by the check that raised them">
               <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
                 {c.modules.map((m) => (
@@ -139,7 +144,7 @@ function Verdict({ c }: { c: CaseDetail }) {
 function SignalStrip({ modules, onOpen }: { modules: ModuleResult[]; onOpen: (t: Tab) => void }) {
   return (
     <section aria-label="Signals by check" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-      {modules.map((m) => {
+      {modules.filter((m) => m.module !== "profile").map((m) => {
         const meta = MOD[m.module] ?? { label: m.module, tab: "overview" as Tab, icon: FileSearch };
         const col = riskColor(m.risk), hot = m.risk >= 0.3, I = meta.icon;
         return (
@@ -482,6 +487,81 @@ function SessionContext({ c }: { c: CaseDetail }) {
           <dd className="mt-1 text-[13px]">{x.consent && x.consent.version ? <>accepted <span className="mono text-xs text-dim">{x.consent.version}</span></> : <span className="text-dim">n/a</span>}</dd>
         </div>
       </dl>
+    </Section>
+  );
+}
+
+/** Explainable one-class rules learnt from genuine applicants only (after IDRBT, COMSNETS 2025). Never decides. */
+function GenuineProfile({ m }: { m?: ModuleResult }) {
+  const e = m?.evidence as { outside?: boolean; score?: number; threshold?: number; broken_rules?: number;
+    rules?: { feature: string; value: number | null; low: number; high: number }[] } | undefined;
+  return (
+    <Section title="Unlike genuine applicants?" sub="Rules learnt from genuine applicants only, no fraud labels"
+      right={e && <span className={clsx("chip", e.outside ? "text-review" : "text-approve")}>{e.outside ? "Outside the profile" : "Inside the profile"}</span>}>
+      {!e ? <p className="text-sm text-dim">No genuine profile has been trained yet. Run the build.</p> : (
+        <>
+          <p className="text-sm">
+            {e.outside ? <>This case breaks <b>{e.broken_rules}</b> rule{e.broken_rules === 1 ? "" : "s"} that genuine applicants like it follow.</>
+              : <>This case looks like genuine applicants on every learnt rule.</>}
+            <span className="mono ml-1.5 text-xs text-dim">score {e.score} / limit {e.threshold}</span>
+          </p>
+          {!!e.rules?.length && (
+            <ul className="mt-3 divide-y divide-line text-[13.5px]">
+              {e.rules.map((r) => (
+                <li key={r.feature} className="flex items-baseline justify-between gap-3 py-2">
+                  <span className="leading-snug">{featureLabel(r.feature)}</span>
+                  <span className="mono shrink-0 text-xs"><span className="text-review">{r.value ?? "missing"}</span>
+                    <span className="text-dim"> · {r.low === r.high ? `genuine always ${r.low}` : `genuine ${r.low}–${r.high}`}</span></span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-xs text-dim">Catches fraud types the model has never seen. Shown to help you review; it never approves or rejects.</p>
+        </>
+      )}
+    </Section>
+  );
+}
+
+type CF = { available: boolean; reason?: string; verdict?: string; summary?: string; risk?: number;
+  applicant_controllable?: { reachable_band: string; best_risk: number; flips: boolean; searched_features: number;
+    changes: { feature: string; from: number | null; to: number; risk_after: number }[] };
+  blocking_evidence?: { check: string; label: string; status: string }[] };
+const VERDICT: Record<string, string> = { robust: "text-approve", comfortable: "text-approve", fragile: "text-reject", "close to the line": "text-review" };
+
+/** What would change this decision, searching only what an applicant controls (after IDRBT's counterfactual XAI). */
+function Counterfactual({ id }: { id: string }) {
+  const [cf, setCf] = useState<CF | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { get<CF>(`/api/apps/${id}/counterfactual`).then(setCf).catch((e) => setErr(String(e))); }, [id]);
+  const ac = cf?.applicant_controllable;
+  return (
+    <Section title="What would change this decision?" sub="Only things an applicant controls: typing, timing, devices, links"
+      right={cf?.verdict && <span className={clsx("chip capitalize", VERDICT[cf.verdict])}>{cf.verdict}</span>}>
+      {err ? <p className="text-sm text-reject">{err}</p>
+        : !cf ? <div className="h-24 animate-pulse rounded-xl bg-bg-2" />
+        : !cf.available ? <p className="text-sm text-dim">Not available: {cf.reason}.</p> : (
+          <>
+            <p className="text-sm leading-relaxed">{cf.summary}</p>
+            {!!ac?.changes.length && (
+              <ul className="mt-3 divide-y divide-line text-[13.5px]">
+                {ac.changes.map((ch) => (
+                  <li key={ch.feature} className="flex items-baseline justify-between gap-3 py-2">
+                    <span className="leading-snug">{featureLabel(ch.feature)}</span>
+                    <span className="mono shrink-0 text-xs text-dim">{ch.from ?? "missing"} → {ch.to} · risk {ch.risk_after.toFixed(2)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!!cf.blocking_evidence?.length && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {cf.blocking_evidence.map((b) => <span key={b.check} className="chip text-xs">{b.label}</span>)}
+              </div>
+            )}
+            <p className="mt-3 text-xs text-dim">Searched {ac?.searched_features} applicant-controlled signals with values genuine applicants have.
+              Analyst-only: never shown to applicants or partners.</p>
+          </>
+        )}
     </Section>
   );
 }

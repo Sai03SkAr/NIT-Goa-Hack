@@ -126,6 +126,19 @@ include the cross-institution network, which only adds review holds on live case
 
 ---
 
+## What we took from IDRBT (the RBI's banking-technology research institute)
+Full detail and measurements: `docs/IDRBT_INNOVATION.md`.
+- **Explainable one-class "genuine profile"** (after IDRBT's COMSNETS 2025 paper): rules learnt from genuine applicants
+  only. On fraud types the model never saw, the **model alone catches 0% of bots and 40% of tampered cards; the profile
+  catches 94% and 100%**; the live system catches 100%. No fraud labels needed (ROC-AUC 0.984). Shown on every case as
+  readable rules, never a decision gate.
+- **One-shot federated learning** (after IDRBT's FedPNN): banks share only cluster summaries; with different customer
+  bases the federated profile reaches AUC 0.991 and flags 99% of fraud vs 0.982 / 87% for a bank alone.
+- **Generative adversarial attacker** (after IDRBT's chaotic-VAE adversarial ML): evades a behaviour-only detector on
+  **49 of 49** frauds, and **0 of 85** on TrueID.
+- **Counterfactual "what would change this decision"** (after IDRBT's counterfactual XAI): per case, whether anything
+  the applicant controls could flip it. A per-decision robustness margin, analyst-only.
+
 ## Likely mentor questions, with answers
 - **"What's new vs what I built 5 years ago?"** → Not the checks (those are commodity). The **decision-and-correlation
   layer**: evidence-first policy, onboarding-time identity graph, algorithms repurposed as cross-identity linkers, and
@@ -135,7 +148,12 @@ include the cross-institution network, which only adds review holds on live case
 - **"Why would a bank buy it?"** → It sits behind their existing KYC site, targets synthetic/mule fraud RBI is
   actively cracking down on, runs on open models with no per-call cost, and gets stronger with every member: the consortium network catches an
 identity reused across banks without any bank sharing customer data.
-- **"Robustness?"** → No fraud approved under any attack; adaptive attacker 0/85; fused beats every single module.
+- **"Robustness?"** → No fraud approved under any attack; adaptive attacker 0/85; a generative (chaotic-VAE) attacker
+  that beats a behaviour-only detector 49/49 gets 0/85 on TrueID; fused beats every single module.
+- **"What about fraud you've never seen?"** → Retrain without each fraud type: the model alone misses unseen bots (0%),
+  the label-free genuine profile catches 94%, and the evidence policy catches all of them.
+- **"Did you use Indian research?"** → Yes: four algorithms from IDRBT's published fraud research, transferred from
+  ATM/card fraud to KYC onboarding and measured on our data (`docs/IDRBT_INNOVATION.md`).
 
 ## Where this lives in the code
 - Decision policy: `backend/app/policy.py` · fusion/model: `backend/app/fusion/`

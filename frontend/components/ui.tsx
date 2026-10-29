@@ -298,6 +298,6 @@ const WORDS: Record<string, string> = { sim: "SIM", qr: "QR", ocr: "OCR", pan: "
 /** doc_risk -> "Card: risk"; reg_sim_age_days -> "Registry: SIM age days". */
 export function featureLabel(f: string) {
   const [area, ...rest] = f.split("_");
-  const words = rest.map((w) => WORDS[w] ?? w).join(" ");
+  const words = rest.map((w) => (w === "sim" && area === "bio" ? "similarity" : WORDS[w] ?? w)).join(" ");  // face: similarity, not SIM card
   return AREA[area] ? `${AREA[area]}: ${words}` : f.replaceAll("_", " ");
 }
