@@ -172,7 +172,7 @@ export default function Metrics() {
         {cfg ? <BandsEditor cfg={cfg} /> : <Section title="Decision bands"><p className="text-sm text-dim">Configuration not available.</p></Section>}
       </div>}
 
-      {view === "unseen" && <Unseen m={m} fed={d.federated} />}
+      {view === "unseen" && <Unseen m={m} fed={d.federated} fp={d.footprint} />}
 
       {view === "method" && <Section title="How these numbers were made">
         <div className="max-w-3xl space-y-3 text-sm leading-relaxed text-muted">
@@ -221,7 +221,7 @@ function BandsEditor({ cfg }: { cfg: any }) {
 }
 
 /** Zero-day fraud, the label-free genuine profile and its federated version (docs/IDRBT_INNOVATION.md). */
-function Unseen({ m, fed }: { m: any; fed: any }) {
+function Unseen({ m, fed, fp }: { m: any; fed: any; fp: any }) {
   const zd: any[] = m.zero_day ?? [], gp = m.genuine_profile;
   const cell = (v: number) => <span className={clsx("mono", v >= 0.9 ? "text-approve" : v >= 0.5 ? "text-review" : "text-reject")}>{pct(v, 0)}</span>;
   return (
@@ -262,6 +262,21 @@ function Unseen({ m, fed }: { m: any; fed: any }) {
           </> : <p className="text-sm text-dim">Run eval/federated_profile.py to compute this.</p>}
         </Section>
       </div>
+      <Section title="Digital footprint: why only contradictions count" sub="Consented email, phone and linked-account check, compared with a naive social score">
+        {fp?.rows ? <>
+          <div className="grid grid-cols-[minmax(130px,1.2fr)_repeat(3,minmax(80px,1fr))] gap-x-4 gap-y-2 text-sm">
+            <span className="text-xs text-dim">Applicants</span><span className="text-xs text-dim">Consented</span>
+            <span className="text-xs text-dim">Contradiction (ours)</span><span className="text-xs text-dim">Naive social score</span>
+            {fp.rows.map((r: any) => [<span key={r.type}>{r.type === "genuine" ? "Genuine" : TYPE_NAME[r.type] ?? r.type}</span>,
+              <span key={r.type + "c"} className="mono">{r.consented}/{r.applicants}</span>,
+              <span key={r.type + "o"} className={clsx("mono", r.type === "genuine" ? "text-approve" : "")}>{pct(r.contradiction_rate, 1)}</span>,
+              <span key={r.type + "n"} className={clsx("mono", r.type === "genuine" ? "text-reject" : "")}>{pct(r.naive_flag_rate, 1)}</span>])}
+          </div>
+          <p className="mt-3 max-w-3xl text-xs text-dim">A score that also marks people down for a thin or new footprint would flag {pct(fp.genuine_naive_flag_rate, 0)} of genuine applicants,
+            including everyone new to digital life. Ours flags {pct(fp.genuine_contradiction_rate, 1)} and only on a real contradiction. It is weak against fraud
+            ({pct(fp.fraud_contradiction_rate, 0)}) because fraud is already stopped by evidence an attacker can't fake; the footprint corroborates and never decides. {fp.note}</p>
+        </> : <p className="text-sm text-dim">Run eval/footprint_eval.py to compute this.</p>}
+      </Section>
     </div>
   );
 }

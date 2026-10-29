@@ -72,6 +72,11 @@ REASONS: dict[str, str] = {
     "COR_NET_DEVICE_MANY": "This device onboarded several different people at other institutions this week",
     # policy
     "MODEL_UNAVAILABLE": "Risk model not loaded or out of date; a human decides",
+    # digital footprint (consented, informational: never decides)
+    "FP_LINKED_NAME_MISMATCH": "The account the applicant linked is in a different name",
+    "FP_LINKED_PHOTO_MISMATCH": "The linked account's profile picture is a different person from the selfie",
+    "FP_EMAIL_PREDATES_APPLICANT": "The email address is older than its owner's childhood",
+    "FP_UNAVAILABLE": "Digital footprint source could not be reached",
     "PROFILE_OUTLIER": "Unlike every pattern learnt from genuine applicants (one-class rules); shown to analysts, never decides",
 }
 

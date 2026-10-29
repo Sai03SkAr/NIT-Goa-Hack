@@ -154,6 +154,10 @@ identity reused across banks without any bank sharing customer data.
   the label-free genuine profile catches 94%, and the evidence policy catches all of them.
 - **"Did you use Indian research?"** → Yes: four algorithms from IDRBT's published fraud research, transferred from
   ATM/card fraud to KYC onboarding and measured on our data (`docs/IDRBT_INNOVATION.md`).
+- **"Why not score people on their social media?"** → Scraping breaks platform terms and DPDP purpose limitation, and
+  marking people down for a thin footprint would hold 20% of our genuine applicants. We built an optional, consented
+  footprint check (email/phone age, a linked account) that only flags contradictions, such as a linked account in another
+  name, and never decides (`docs/DIGITAL_FOOTPRINT.md`).
 
 ## Where this lives in the code
 - Decision policy: `backend/app/policy.py` · fusion/model: `backend/app/fusion/`

@@ -84,6 +84,7 @@ body { font-family: var(--font-geist-sans), ui-sans-serif, system-ui; font-size:
   .chip {
     display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px; border-radius: 999px; font-size: 12px;
     border: 1px solid var(--line-2); color: var(--muted); background: var(--panel); white-space: nowrap;
+    max-width: 100%; min-width: 0;  /* never spill into the next column; long labels truncate (see TypeChip) */
   }
   /* Tabs are an ink pill track: the selected tab is the one dark thing in the row. */
   .tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }

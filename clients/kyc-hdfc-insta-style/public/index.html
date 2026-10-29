@@ -379,9 +379,10 @@ function stepReview() {
     <div class="box"><h4>Uploaded Selfie</h4><img src="${S.selfie}" style="width:84px;height:84px;object-fit:cover;border-radius:6px"></div>
     <div class="fld"><label for="promo">Promo Code (Optional)</label><input id="promo"></div>
     <label class="chk"><input type="checkbox" id="tc"> I agree and provide my consent to the Terms and Conditions, and confirm that the information provided is true.</label>
+    <label class="chk"><input type="checkbox" id="fpc"> <span><b>Optional:</b> TrueID may also check how long my email and mobile number have been in use online, and any account I link, against these details. Only contradictions are noted; saying no or having little online history never counts against me.</span></label>
     <div class="err" id="err"></div><button class="btn" id="go">Confirm &amp; Continue</button>`;
   document.querySelectorAll("[data-e]").forEach((b) => (b.onclick = () => stepDetails(+b.dataset.e)));
-  $("#go").onclick = () => { if (!$("#tc").checked) return ($("#err").textContent = "Please accept the Terms and Conditions."); stepVkycConsent(); };
+  $("#go").onclick = () => { if (!$("#tc").checked) return ($("#err").textContent = "Please accept the Terms and Conditions."); S.footprint = $("#fpc").checked; stepVkycConsent(); };
 }
 
 // ---------- 7. Video KYC consent + submit ----------
@@ -423,6 +424,7 @@ async function submit() {
     liveness: { performed: false, passed: false, challenges: [], virtual_camera: false },
     capture: { card: S.kycVia === "ovd" ? "ovd_upload_" + S.ovd.type.toLowerCase().replace(/\s/g, "_") : S.kycVia + "_record", selfie: "gallery_upload" },
     partner_checks: S.checks,
+    consent: { footprint: !!S.footprint },  // separate, optional purpose
   };
   const r = await fetch("/api/kyc/submit", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ payload, card: S.card, selfie: S.selfie, frames: [] }) }).then((x) => x.json());

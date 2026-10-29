@@ -1,6 +1,7 @@
 """Score every seeded application with the trained fusion (same decide/fraud-type/summary code as live)
 and load them into SQLite for the analyst console."""
 import json
+import pickle
 import sys
 from pathlib import Path
 
@@ -8,7 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import db, policy  # noqa: E402
 from app.config import DB_PATH, GEN, LIVE_HISTORY, PRE  # noqa: E402
 from app.fusion import fraud_type, model  # noqa: E402
-from app.graph.pipeline import jsonable, profile_module  # noqa: E402
+from app.graph.pipeline import footprint_module, jsonable, profile_module  # noqa: E402
+from app.modules.footprint.provider import seeded_consent  # noqa: E402
 from app.llm.summary import template  # noqa: E402
 
 
@@ -25,6 +27,11 @@ def main():
             feats = {}
             for m in mods:
                 feats.update({k: (float("nan") if v is None else v) for k, v in m["features"].items()})
+            ext = PRE / "extract" / f"{a['app_id']}.pkl"
+            sel = pickle.loads(ext.read_bytes())["bio"]["selfie"] if ext.exists() else None
+            fp = footprint_module({**a, "consent": {"footprint": seeded_consent(a["app_id"])}}, sel and sel["emb"])
+            feats.update(fp["features"])
+            mods = mods + [fp]
             prof = profile_module(feats)  # genuine-profile rules, same as live (informational)
             if prof:
                 feats.update(prof["features"])
@@ -42,7 +49,7 @@ def main():
                 action=act["action"], modules=jsonable(mods), shap=d["shap"], summary=template(case),
                 evidence=policy.evidence_list({**feats, **policy.context_codes(a)}), model_status=d["model_status"], policy_version=d["policy_version"],
                 card_path=a["card_path"], selfie_path=a["selfie_path"], truth_label=a["label"], truth_type=a["fraud_type"],
-                context={"ip": a["device"].get("ip"), "geo": None, "consent": None, "ts": a["ts"]}))
+                context={"ip": a["device"].get("ip"), "geo": None, "consent": {"footprint": seeded_consent(a["app_id"])}, "ts": a["ts"]}))
         s.commit()
     print("seeded", len(apps))
 

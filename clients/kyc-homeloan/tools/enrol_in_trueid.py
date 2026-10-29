@@ -79,12 +79,33 @@ def main():
         reg["ckyc"][p["id_number"]] = {"first_seen": (today - timedelta(days=1500)).strftime("%d/%m/%Y")}
         reg["bureau"][p["id_number"]] = {"accounts": 3, "oldest_months": 60, "inquiries_90d": 1}
     path.write_text(json.dumps(reg))
+    enrol_footprint(slugs, faces, today)
 
     docs.generate(portraits)
     print(f"Enrolled {len(slugs)} people in {path}")
     print(f"  {slugs[a.who]['name']}: " + ("your photo is the UIDAI photo and the card portrait" if me is not None
                                            else "no photo given: face checks will be unavailable"))
     print("Next: restart the TrueID backend (registries load at startup), then run scripts/check_partner_connection.py")
+
+
+def enrol_footprint(slugs: dict, faces: Path, today: date):
+    """Simulated digital footprint keyed by mobile number (emails are typed live): an old number, a linked Google
+    account with the registry photo. Karthik's linked account is in someone else's name, to demo a contradiction."""
+    import numpy as np
+    from app.modules.biometric.face import embed
+    fp_path, ph_path = GEN / "footprint.json", GEN / "footprint_photos.npz"
+    fp = json.loads(fp_path.read_text()) if fp_path.exists() else {"email": {}, "phone": {}, "linked": {}, "consent": {}}
+    photos = dict(np.load(ph_path)) if ph_path.exists() else {}
+    for slug, p in slugs.items():
+        phone, key = docs_phone(p), f"partner_{slug}"
+        e = embed(cv2.imread(str(faces / f"{slug}.jpg")))
+        if e is not None:
+            photos[key] = e["emb"]
+        fp["phone"][phone] = {"first_seen": (today - timedelta(days=2100)).isoformat(), "services": 7}
+        fp["linked"][phone] = {"provider": "google", "name": "Karan Shetty" if slug == "karthik-prabhu" else p["name"],
+                               "created": (today - timedelta(days=1900)).isoformat(), "photo": key if e is not None else None}
+    fp_path.write_text(json.dumps(fp))
+    np.savez(ph_path, **photos)
 
 
 PHONES = {"234567890124": "9822001122", "345678901238": "9890456712", "456789012341": "9765123480", "567890123458": "9923345671"}

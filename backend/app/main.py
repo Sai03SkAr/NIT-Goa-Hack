@@ -227,6 +227,7 @@ class TelemetryIn(BaseModel):
 class Consent(BaseModel):
     accepted: bool
     version: str
+    footprint: bool = False  # separate, optional purpose (DPDP): consented digital-footprint check
 
 
 class Geo(BaseModel):
@@ -619,9 +620,9 @@ def metrics(request: Request):
     prov = {k: man.get(k) for k in ("policy_version", "feature_schema_version", "git_commit", "evaluation_kind", "split")}
     if not S.is_analyst(request):
         return {"metrics": {k: m[k] for k in PUBLIC_METRICS if k in m}, "provenance": prov}
-    fed = PRE / "federated.json"  # eval/federated_profile.py (one-shot federated genuine profile)
-    return {"metrics": m, "ablation": _json("ablation.json"), "provenance": prov,
-            "federated": json.loads(fed.read_text()) if fed.exists() else None}
+    extra = {k: json.loads((PRE / f).read_text()) if (PRE / f).exists() else None
+             for k, f in (("federated", "federated.json"), ("footprint", "footprint_eval.json"))}  # eval/*.py
+    return {"metrics": m, "ablation": _json("ablation.json"), "provenance": prov, **extra}
 
 
 # ------------------------------------------------------------------ learning loop (analyst-only, see app/learning.py)

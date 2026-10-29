@@ -29,6 +29,7 @@ function Wizard() {
   useEffect(() => { tel.attach(); return () => tel.detach(); }, [tel]);
   // applicant session cookie (HttpOnly) + the consent notice version the server expects
   const [consentVersion, setConsentVersion] = useState("");
+  const [footprint, setFootprint] = useState(false);  // separate, optional purpose
   useEffect(() => { post<{ consent_version: string }>("/api/session").then((r) => setConsentVersion(r.consent_version)).catch((e) => setErr(String(e))); }, []);
   // one key per submission attempt: a double click or network retry cannot create two applications
   const idem = useRef<string>("");
@@ -41,7 +42,7 @@ function Wizard() {
       const payload = {
         form: { ...form, id_number: form.id_number.replace(/\D/g, ""), pan: form.pan.toUpperCase().trim() },
         device: { device_id: await deviceId(), user_agent: navigator.userAgent, camera_labels: cams, active_camera: active || null },
-        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion }, challenge_id: challengeId, geo: await getGeo(),
+        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion, footprint }, challenge_id: challengeId, geo: await getGeo(),
       };
       fd.append("payload", JSON.stringify(payload));
       fd.append("card", card!);
@@ -78,7 +79,7 @@ function Wizard() {
         {demo && <DemoKit onPick={(f, c) => { setForm(f); setCard(c); }} />}
 
         <div className="fade-up" key={step}>
-          {step === 0 && <Consent onNext={() => setStep(1)} />}
+          {step === 0 && <Consent footprint={footprint} setFootprint={setFootprint} onNext={() => setStep(1)} />}
           {step === 1 && <Details form={form} setForm={setForm} tel={tel} onNext={() => setStep(2)} />}
           {step === 2 && <DocStep card={card} setCard={setCard} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
           {step === 3 && <SelfieStep busy={submitting} onBack={() => setStep(2)} onDone={submit} />}
@@ -89,7 +90,7 @@ function Wizard() {
   );
 }
 
-function Consent({ onNext }: { onNext: () => void }) {
+function Consent({ footprint, setFootprint, onNext }: { footprint: boolean; setFootprint: (v: boolean) => void; onNext: () => void }) {
   const [ok, setOk] = useState(false);
   return (
     <div className="panel max-w-3xl p-8">
@@ -108,6 +109,11 @@ function Consent({ onNext }: { onNext: () => void }) {
       <label className="mt-6 flex cursor-pointer items-center gap-3 text-sm">
         <input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} className="size-4 accent-brand" />
         I consent to identity verification under the DPDP Act, 2023.
+      </label>
+      <label className="mt-3 flex cursor-pointer items-start gap-3 text-sm">
+        <input type="checkbox" checked={footprint} onChange={(e) => setFootprint(e.target.checked)} className="mt-0.5 size-4 accent-brand" />
+        <span>Optional: also check my email and mobile number&apos;s online history, and any account I link, against these details.
+          <span className="block text-xs text-dim">Only contradictions are noted. Saying no, or having little online history, never counts against you.</span></span>
       </label>
       <button className="btn btn-primary mt-6" disabled={!ok} onClick={onNext}>Continue <ChevronRight className="size-4" /></button>
     </div>

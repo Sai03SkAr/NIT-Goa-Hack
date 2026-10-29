@@ -36,7 +36,9 @@ INFORMATIONAL = {"voice": ("Voice step-up", "simulated"),
                  "network": ("No conflict in the cross-institution fraud network (hashed identifiers)", "consortium"),
                  # explains and monitors, never decides (docs/IDRBT_INNOVATION.md: as a gate it held more genuine
                  # applicants without catching more fraud, so it stays outside the decision rules and POLICY_VERSION)
-                 "profile": ("Inside the patterns learnt from genuine applicants (one-class rules)", "server")}
+                 "profile": ("Inside the patterns learnt from genuine applicants (one-class rules)", "server"),
+                 # optional consent; only contradictions count, never a missing footprint (app/modules/footprint)
+                 "footprint": ("Consented digital footprint agrees with the KYC details", "consented provider (simulated)")}
 
 
 def status(feats: dict, check: str) -> str:

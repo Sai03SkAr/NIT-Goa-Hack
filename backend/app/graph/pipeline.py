@@ -21,6 +21,7 @@ from app.modules.biometric import agent as bio
 from app.modules.correlation import agent as cor
 from app.modules.correlation.history import History
 from app.modules.document import agent as doc
+from app.modules.footprint import agent as fpm
 from app.modules.registry import agent as regm
 from app.modules.registry.mocks import RegistryUnavailable, registry_face, registry_face_url
 
@@ -132,13 +133,21 @@ def profile_module(feats: dict) -> dict | None:
                         features={"ev_profile": policy.CODE[st]}, evidence=r).model_dump()
 
 
+def footprint_module(app: dict, selfie_emb) -> dict:
+    """Consented digital footprint (app/modules/footprint): only contradictions count; informational."""
+    consented = bool((app.get("consent") or {}).get("footprint"))
+    return fpm.assess(app["form"], consented, selfie_emb, _today({"app": app})).model_dump()
+
+
 def fusion_node(s: State):
     feats = {}
     for m in s["modules"].values():
         feats.update(m["features"])
     net = network_module(s["app"])
     feats.update(net["features"])
-    mods = {"network": net}
+    fp = footprint_module(s["app"], s["modules"]["biometric"].get("_emb"))
+    feats.update(fp["features"])
+    mods = {"network": net, "footprint": fp}
     prof = profile_module(feats)
     if prof:
         feats.update(prof["features"])

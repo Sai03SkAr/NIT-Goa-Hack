@@ -207,7 +207,7 @@ const STEPS = [
   ["esign", "Review & eSign", "Aadhaar OTP"],
 ];
 const S = {
-  step: 0, loan: { amount: 3500000, tenure: 20, city: "" }, form: {}, panName: "", panDob: "", panLast4: "",
+  step: 0, loan: { amount: 3500000, tenure: 20, city: "", footprint: false }, form: {}, panName: "", panDob: "", panLast4: "",
   results: {}, docs: {}, inc: {}, acct: {}, bill: {}, selfie: null, frames: [], challenge: null,
   camera: { labels: [], active: "", virtual: false }, geo: null, sig: null, appId: null, otp: null, ref: "KHF" + Date.now().toString(36).toUpperCase().slice(-6),
 };
@@ -355,6 +355,7 @@ function stepLoan() {
      <label class="chk"><input type="checkbox" id="c1"> I allow Kestrel to verify my identity, documents and photo with TrueID Shield, UIDAI (Aadhaar e-KYC) and the Income Tax Department.</label>
      <label class="chk"><input type="checkbox" id="c2"> I allow Kestrel to fetch my credit report from a credit bureau for this application.</label>
      <label class="chk"><input type="checkbox" id="c3"> I have read the privacy notice. My documents are kept only as long as the law requires.</label>
+     <label class="chk"><input type="checkbox" id="c4" ${L.footprint ? "checked" : ""}> <span><b>Optional:</b> TrueID may also check how long my email and mobile number have been in use online, and any account I link, against these details. Only contradictions are noted; saying no or having little online history never counts against me.</span></label>
      ${nav("Start KYC")}`);
   const upd = () => { const P = +val("amt").replace(/\D/g, "") || 0, y = +val("ten"); const e = emi(P, y);
     $("#emi").innerHTML = `<div><span>Indicative EMI</span><b>${inr(e)}</b></div><div><span>Interest rate</span><b>${(RATE * 100).toFixed(2)}%</b></div><div><span>Income usually needed</span><b>${inr(e / 0.5)}/mo</b></div>`; };
@@ -364,7 +365,7 @@ function stepLoan() {
     if (P < 500000 || P > 50000000) return err("Enter an amount between ₹5 lakh and ₹5 crore.");
     if (!val("city")) return err("Enter the city of the property.");
     if (!$("#c1").checked || !$("#c2").checked || !$("#c3").checked) return err("Please give all three consents to continue.");
-    Object.assign(S.loan, { amount: P, tenure: +val("ten"), city: val("city") });
+    Object.assign(S.loan, { amount: P, tenure: +val("ten"), city: val("city"), footprint: $("#c4").checked });
     setResult("loan", [C("consent_kyc", "Consent to identity verification recorded", "PASS"), C("consent_bureau", "Consent to credit bureau check recorded", "PASS")]);
     next();
   };
@@ -714,6 +715,7 @@ async function submit() {
     capture: { card: "upload_id_card", selfie: "live_head_turn_challenge", documents: Object.keys(S.docs).join(", "),
       loan: `${inr(S.loan.amount)} / ${S.loan.tenure}y`, lender_flags: flags.join(" | ").slice(0, 600) || "none" },
     partner_checks,
+    consent: { footprint: S.loan.footprint },  // separate, optional purpose
   };
   const r = await fetch("/api/kyc/submit", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ payload, card: S.docs.idcard.data, selfie: S.selfie, frames: S.frames }) }).then((x) => x.json());

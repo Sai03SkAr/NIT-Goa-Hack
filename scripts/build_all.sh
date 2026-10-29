@@ -24,11 +24,13 @@ fi
 $PY data/gen_population.py --n "$N"
 rm -rf precomputed/extract  # cached extractions belong to the previous population and code
 $PY eval/build_dataset.py "$WORKERS"
+$PY data/gen_footprint.py  # needs the face embeddings build_dataset computed
 $PY eval/augment.py
 $PY eval/train.py
 $PY eval/adaptive_attacker.py
 $PY eval/vae_attacker.py
 $PY eval/federated_profile.py
+$PY eval/footprint_eval.py
 $PY eval/run_attacks.py "$WORKERS"
 $PY eval/seed_db.py
 echo "build complete"

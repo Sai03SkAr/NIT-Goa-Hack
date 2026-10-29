@@ -498,9 +498,11 @@ function stepEsign() {
        <dt>Address</dt><dd>${esc(f.address)}</dd><dt>Father / Mother</dt><dd>${esc(f.father)} / ${esc(f.mother)}</dd>
        <dt>Income</dt><dd>${esc(f.income)}, ${esc(f.occupation)}</dd></dl></div>
      <label class="chk"><input type="checkbox" id="agree"> I confirm the details are correct and authorise Tideway to submit my KYC to the KRA and CDSL.</label>
+     <label class="chk"><input type="checkbox" id="fpc"> <span><b>Optional:</b> TrueID may also check how long my email and mobile number have been in use online, and any account I link, against these details. Only contradictions are noted; saying no or having little online history never counts against me.</span></label>
      <div class="err" id="err"></div><button class="btn" id="go">eSign with Aadhaar OTP</button>`);
   $("#go").onclick = () => {
     if (!$("#agree").checked) return ($("#err").textContent = "Please confirm the declaration.");
+    S.footprint = $("#fpc").checked;
     sendOtp("UIDAI SMS (eSign)", "your Aadhaar-linked mobile");
     $("#go").outerHTML = `<p class="sub" style="margin:18px 0 10px">Enter the eSign OTP sent to your Aadhaar-linked mobile.</p>${otpBoxes("sotp")}<div class="err" id="err2"></div><button class="btn" id="sgo">Sign &amp; submit</button>`;
     const val = wireOtp("sotp");
@@ -526,6 +528,7 @@ async function submit() {
     liveness: { performed: true, passed: true, challenges: ["ipv_live_capture"], virtual_camera: S.camera.virtual },
     capture: { card: "upload_pan_card", selfie: "live_webcam_ipv", signature: "drawn" },
     partner_checks: S.checks,
+    consent: { footprint: !!S.footprint },  // separate, optional purpose
   };
   const r = await fetch("/api/kyc/submit", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ payload, card: S.card, selfie: S.selfie, frames: S.frames }) }).then((x) => x.json());

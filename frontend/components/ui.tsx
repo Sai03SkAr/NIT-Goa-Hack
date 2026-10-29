@@ -244,8 +244,8 @@ export function TypeChip({ type, label }: { type: string; label?: string }) {
   if (!type || type === "none") return <span className="text-xs text-dim">None</span>;
   const c = TYPE_COLORS[type] ?? "#8a93a2";
   return (
-    <span className="chip" style={{ color: c, borderColor: `color-mix(in srgb, ${c} 30%, transparent)`, background: `color-mix(in srgb, ${c} 6%, var(--panel))` }}>
-      <span className="size-1.5 rounded-full" style={{ background: c }} aria-hidden />{label ?? type.replace("_", " ")}
+    <span className="chip" title={label ?? type.replace("_", " ")} style={{ color: c, borderColor: `color-mix(in srgb, ${c} 30%, transparent)`, background: `color-mix(in srgb, ${c} 6%, var(--panel))` }}>
+      <span className="size-1.5 shrink-0 rounded-full" style={{ background: c }} aria-hidden /><span className="min-w-0 truncate">{label ?? type.replace("_", " ")}</span>
     </span>
   );
 }

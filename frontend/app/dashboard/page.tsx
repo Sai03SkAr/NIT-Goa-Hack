@@ -40,7 +40,7 @@ export default function Queue() {
 
   const count = (b: string) => (!stats ? null : b === "ALL" ? stats.total : stats.bands[b] ?? 0);
   const open = stats ? (stats.bands.REVIEW ?? 0) : 0;
-  const COLS = "grid-cols-[6px_minmax(200px,1.4fr)_110px_minmax(140px,1fr)_minmax(150px,1fr)_minmax(170px,1.2fr)_96px]";
+  const COLS = "grid-cols-[6px_minmax(200px,1.4fr)_110px_minmax(130px,0.9fr)_minmax(200px,1.1fr)_minmax(170px,1.2fr)_96px]";
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Operations" title="Review queue"
@@ -93,7 +93,7 @@ export default function Queue() {
       {err && <div className="panel px-5 py-6 text-sm text-reject">The backend is not reachable. Start it with ./scripts/run_backend.sh. ({err})</div>}
 
       <section aria-label="Cases" className="-mx-1 overflow-x-auto px-1 pb-1">
-        <div className="min-w-[960px] space-y-2">
+        <div className="min-w-[1010px] space-y-2">
           <div className={clsx("grid gap-4 pr-4 text-xs text-dim", COLS)}>
             <span /><span>Applicant</span><span>Decision</span><span>Fraud risk</span><span>Pattern</span><span>Next step</span><span className="text-right">Submitted</span>
           </div>
@@ -107,14 +107,14 @@ export default function Queue() {
                   <Avatar name={r.name} size={36} />
                   <span className="min-w-0">
                     <span className="block truncate font-medium">{r.name}</span>
-                    <span className="mono flex items-center gap-1.5 text-xs text-dim">{r.app_id}<span aria-hidden>·</span>ID ···· {r.id_last4}
+                    <span className="mono flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-dim"><span className="whitespace-nowrap">{r.app_id} <span aria-hidden>·</span></span><span className="whitespace-nowrap">ID ···· {r.id_last4}</span>
                       {SOURCE[r.source] !== "" && <span className="chip px-1.5 py-0 font-sans text-[10.5px]">{SOURCE[r.source] ?? r.source.replace("partner:", "")}</span>}</span>
                   </span>
                 </span>
                 <span><BandBadge band={r.band} />{r.status !== "open" && <span className="mt-1 block text-xs capitalize text-dim">analyst: {r.status.replaceAll("_", " ")}</span>}</span>
                 <span>{r.prob == null ? <span className="text-xs text-review">model unavailable</span>
                   : <span className="flex items-center gap-3"><RiskBar value={r.prob} /><span className="mono w-9 text-xs font-medium" style={{ color: col }}>{r.prob.toFixed(2)}</span></span>}</span>
-                <span><TypeChip type={r.fraud_type} label={r.fraud_type === "none" ? undefined : r.fraud_label} /></span>
+                <span className="min-w-0"><TypeChip type={r.fraud_type} label={r.fraud_type === "none" ? undefined : r.fraud_label} /></span>
                 <span className="line-clamp-2 text-[13px] text-muted" title={r.action}>{r.band === "APPROVE" ? <span className="text-dim">None</span> : r.action}</span>
                 <span className="flex items-center justify-end gap-1 whitespace-nowrap text-xs text-dim">{when(r.ts)}<ChevronRight className="size-4 opacity-0 transition-opacity group-hover:opacity-100" /></span>
               </Link>

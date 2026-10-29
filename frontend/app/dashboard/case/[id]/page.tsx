@@ -2,7 +2,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { AlertTriangle, Bot, Building2, Check, ChevronRight, FileSearch, Fingerprint, Minus, Network, ScanFace, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Bot, Building2, Check, ChevronRight, FileSearch, Fingerprint, Globe, Minus, Network, ScanFace, Sparkles, X } from "lucide-react";
 import { Avatar, Finding, RiskRing, Section, SimBadge, Stamp, TypeChip, featureLabel, readable, riskColor, when } from "@/components/ui";
 import { IdentityGraph, type GLink, type GNode } from "@/components/Graph";
 import { type CaseDetail, type EvidenceCheck, type ModuleResult, del, fileUrl, get, post } from "@/lib/api";
@@ -19,6 +19,7 @@ const MOD: Record<string, { label: string; tab: Tab; icon: any }> = {
   correlation: { label: "Linked apps", tab: "linked", icon: Network },
   network: { label: "Other banks", tab: "linked", icon: Building2 },
   profile: { label: "Genuine profile", tab: "overview", icon: Sparkles },
+  footprint: { label: "Digital footprint", tab: "overview", icon: Globe },
 };
 
 export default function CasePage({ params }: { params: Promise<{ id: string }> }) {
@@ -62,6 +63,7 @@ export default function CasePage({ params }: { params: Promise<{ id: string }> }
               <GenuineProfile m={mod("profile")} />
               <Counterfactual id={c.app_id} />
             </div>
+            <Footprint m={mod("footprint")} />
             <Section title="All findings" sub="Grouped by the check that raised them">
               <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
                 {c.modules.map((m) => (
@@ -143,8 +145,8 @@ function Verdict({ c }: { c: CaseDetail }) {
 
 function SignalStrip({ modules, onOpen }: { modules: ModuleResult[]; onOpen: (t: Tab) => void }) {
   return (
-    <section aria-label="Signals by check" className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-      {modules.filter((m) => m.module !== "profile").map((m) => {
+    <section aria-label="Signals by check" className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6">
+      {modules.filter((m) => m.module !== "profile" && m.module !== "footprint").map((m) => {
         const meta = MOD[m.module] ?? { label: m.module, tab: "overview" as Tab, icon: FileSearch };
         const col = riskColor(m.risk), hot = m.risk >= 0.3, I = meta.icon;
         return (
@@ -152,8 +154,8 @@ function SignalStrip({ modules, onOpen }: { modules: ModuleResult[]; onOpen: (t:
             className="panel flex min-h-[44px] flex-col gap-2 p-3.5 text-left transition-shadow hover:shadow-[var(--shadow-lg)]"
             style={hot ? { borderColor: col, boxShadow: `inset 0 0 0 1px ${col}` } : undefined}>
             <span className="flex items-center justify-between gap-2 text-sm font-medium">
-              <span className="flex items-center gap-1.5"><I className="size-4" style={{ color: hot ? col : "var(--dim)" }} />{meta.label}</span>
-              <span className="mono text-[13px]" style={{ color: col }}>{m.risk.toFixed(2)}</span>
+              <span className="flex min-w-0 items-center gap-1.5"><I className="size-4 shrink-0" style={{ color: hot ? col : "var(--dim)" }} /><span className="truncate">{meta.label}</span></span>
+              <span className="mono shrink-0 text-[13px]" style={{ color: col }}>{m.risk.toFixed(2)}</span>
             </span>
             <span className="h-1.5 rounded-full bg-bg-2"><span className="block h-full rounded-full" style={{ width: `${Math.max(3, m.risk * 100)}%`, background: col }} /></span>
             <span className={clsx("line-clamp-2 text-[12.5px] leading-snug", hot ? "" : "text-dim")} style={hot ? { color: col } : undefined}>
@@ -484,7 +486,8 @@ function SessionContext({ c }: { c: CaseDetail }) {
         </div>
         <div className="well px-3.5 py-3">
           <dt className="text-xs text-dim">Consent</dt>
-          <dd className="mt-1 text-[13px]">{x.consent && x.consent.version ? <>accepted <span className="mono text-xs text-dim">{x.consent.version}</span></> : <span className="text-dim">n/a</span>}</dd>
+          <dd className="mt-1 text-[13px]">{x.consent && x.consent.version ? <>accepted <span className="mono text-xs text-dim">{x.consent.version}</span></> : <span className="text-dim">n/a</span>}
+            {x.consent && "footprint" in x.consent && <span className="block text-xs text-dim">digital footprint: {x.consent.footprint ? "consented" : "declined"}</span>}</dd>
         </div>
       </dl>
     </Section>
@@ -560,6 +563,63 @@ function Counterfactual({ id }: { id: string }) {
             )}
             <p className="mt-3 text-xs text-dim">Searched {ac?.searched_features} applicant-controlled signals with values genuine applicants have.
               Analyst-only: never shown to applicants or partners.</p>
+          </>
+        )}
+    </Section>
+  );
+}
+
+type FP = { status: string; policy?: string; provider?: string; detail?: string; score: number | null; depth?: string; contradictions?: number;
+  checks: { check: string; label: string; result: "consistent" | "contradiction" | "partial"; detail: string }[]; notes?: string[];
+  facts?: { email_age_days: number | null; email_services: number | null; phone_age_days: number | null; phone_services: number | null;
+    linked: { provider: string; name: string; account_age_days: number | null; has_photo: boolean } | null } };
+
+const age = (d: number | null | undefined) => d == null ? "unknown" : d < 60 ? `${d} day${d === 1 ? "" : "s"}` : d < 730 ? `${Math.round(d / 30)} months` : `${(d / 365).toFixed(1)} years`;
+const RESULT = { consistent: { icon: Check, cls: "text-approve", word: "agrees" }, contradiction: { icon: X, cls: "text-reject", word: "contradicts" },
+  partial: { icon: Minus, cls: "text-dim", word: "partial, not counted" } } as const;
+
+/** Optional, consented digital footprint compared with the KYC details. One-sided: only contradictions count. Never decides. */
+function Footprint({ m }: { m?: ModuleResult }) {
+  const e = m?.evidence as FP | undefined;
+  const f = e?.facts;
+  const chip = !e ? null : e.score != null
+    ? <span className={clsx("chip", e.contradictions ? "text-reject" : "text-approve")}>Consistency {e.score}/100</span>
+    : <span className="chip text-dim capitalize">{e.status}</span>;
+  return (
+    <Section title="Digital footprint" sub="Optional and consented: email, phone and an account the applicant chose to link" right={chip}>
+      {!e ? <p className="text-sm text-dim">Not part of this case: it was decided before the footprint check existed.</p>
+        : e.status === "not consented" ? <p className="text-sm text-dim">The applicant did not tick the optional footprint consent, so nothing was looked up. Declining is never held against anyone.</p>
+        : e.status === "unavailable" ? <p className="text-sm text-review">The footprint source could not be reached{e.detail ? `: ${e.detail}` : ""}. Unverified, not disproven.</p> : (
+          <>
+            <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              <div className="well px-3.5 py-3"><dt className="text-xs text-dim">Email address</dt>
+                <dd className="mt-1 text-[13px]">{f?.email_age_days == null ? <span className="text-dim">no record</span> : <>known for <b>{age(f.email_age_days)}</b><span className="block text-xs text-dim">{f.email_services} online service{f.email_services === 1 ? "" : "s"}</span></>}</dd></div>
+              <div className="well px-3.5 py-3"><dt className="text-xs text-dim">Mobile number</dt>
+                <dd className="mt-1 text-[13px]">{f?.phone_age_days == null ? <span className="text-dim">no record</span> : <>known for <b>{age(f.phone_age_days)}</b><span className="block text-xs text-dim">{f.phone_services} online service{f.phone_services === 1 ? "" : "s"}</span></>}</dd></div>
+              <div className="well px-3.5 py-3"><dt className="text-xs text-dim">Linked account</dt>
+                <dd className="mt-1 text-[13px]">{!f?.linked ? <span className="text-dim">none linked</span> : <><span className="capitalize">{f.linked.provider}</span> · <b>{f.linked.name}</b>
+                  <span className="block text-xs text-dim">{age(f.linked.account_age_days)} old · {f.linked.has_photo ? "has a profile picture" : "no picture"}</span></>}</dd></div>
+            </dl>
+            {e.checks.length ? (
+              <ul className="mt-3 divide-y divide-line text-[13.5px]">
+                {e.checks.map((ch) => {
+                  const R = RESULT[ch.result];
+                  return (
+                    <li key={ch.check} className="flex items-start gap-2.5 py-2">
+                      <R.icon className={clsx("mt-0.5 size-4 shrink-0", R.cls)} aria-hidden />
+                      <span className="min-w-0 flex-1 leading-snug">{ch.label}<span className="mono block text-xs text-dim">{ch.detail}</span></span>
+                      <span className={clsx("shrink-0 text-xs", R.cls)}>{R.word}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : <p className="mt-3 text-sm text-dim">Nothing to compare: no footprint was found for this email or number. That is neutral.</p>}
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+              {e.depth && <span className="chip">Footprint depth: {e.depth}</span>}
+              <span className="text-dim">Depth is shown for context and never lowers the score.</span>
+            </div>
+            {!!e.notes?.length && <ul className="mt-2 space-y-1 text-xs text-dim">{e.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+            <p className="mt-3 text-xs text-dim">{e.policy} Source: {e.provider} provider until a licensed one is contracted.</p>
           </>
         )}
     </Section>

@@ -63,6 +63,8 @@ CHALLENGE_TTL_S = int(os.getenv("TRUEID_CHALLENGE_TTL_S", "180"))
 PARTNER_CHALLENGE_TTL_S = int(os.getenv("TRUEID_PARTNER_CHALLENGE_TTL_S", "900"))  # captured mid-journey, submitted after eSign
 ANALYST_SESSION_TTL_S = int(os.getenv("TRUEID_ANALYST_SESSION_TTL_S", str(8 * 3600)))
 CONSENT_VERSION = "2026-10-consent-v1"
+# digital-footprint source (app/modules/footprint/provider.py): "simulated" until a licensed provider is contracted
+FOOTPRINT_PROVIDER = os.getenv("TRUEID_FOOTPRINT_PROVIDER", "simulated")
 
 # Decision bands (an analyst can change them; every change is audited)
 BANDS = {"approve_below": 0.3, "reject_at": 0.7}

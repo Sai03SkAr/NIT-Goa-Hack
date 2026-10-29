@@ -148,7 +148,8 @@ async def create(request: Request, payload: str = Form(..., max_length=MAX_PAYLO
     a = {"app_id": app_id, "ts": now, "source": f"partner:{pid}",
          "form": form.model_dump(), "device": device.model_dump() | {"ip": claimed_ip},
          "telemetry": {k: v for k, v in tele.model_dump().items() if v is not None},
-         "challenge": challenge, "consent": {"accepted": True, "by": f"partner:{pid}", "ts": now}, "geo": geo,
+         "challenge": challenge, "consent": {"accepted": True, "by": f"partner:{pid}", "ts": now,
+                     "footprint": (data.get("consent") or {}).get("footprint") is True}, "geo": geo,
          "card_sha256": hashlib.sha256(card_raw).hexdigest(), "selfie_sha256": hashlib.sha256(selfie_raw).hexdigest(),
          "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg",
          "partner": {"id": pid, "reference": str(data.get("reference", ""))[:64]}}
