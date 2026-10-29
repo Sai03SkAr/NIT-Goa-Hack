@@ -1,0 +1,39 @@
+<section id="proof" data-transition="fade" style="background:#F2F3EF;color:#14161A;font-family:'Geist', Arial, sans-serif;padding:128px 128px 160px;display:flex;flex-direction:column;gap:36px">
+<p style="font-size:24px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:#2B3BE6">Measured</p>
+<h2 style="font-family:'Bricolage Grotesque', Georgia, serif;font-size:72px;font-weight:700;line-height:1.1;letter-spacing:-1px;color:#14161A">Fraud has to fool every layer at once</h2>
+<div style="display:flex;flex-direction:row;gap:28px">
+<div style="flex:1;display:flex;flex-direction:column;gap:8px;border-top:4px solid #0F7B52;padding:20px 0px 0px 0px">
+<p style="font-family:'Bricolage Grotesque', Georgia, serif;font-size:120px;font-weight:800;line-height:1.05;color:#0F7B52">100%</p>
+<p style="font-size:28px;line-height:1.3;color:#4A4F59">of fraud caught (recall)</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:8px;border-top:4px solid #2B3BE6;padding:20px 0px 0px 0px">
+<p style="font-family:'Bricolage Grotesque', Georgia, serif;font-size:120px;font-weight:800;line-height:1.05;color:#2B3BE6">0.998</p>
+<p style="font-size:28px;line-height:1.3;color:#4A4F59">ROC-AUC fused (document alone: 0.78)</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:8px;border-top:4px solid #14161A;padding:20px 0px 0px 0px">
+<p style="font-family:'Bricolage Grotesque', Georgia, serif;font-size:120px;font-weight:800;line-height:1.05;color:#14161A">95%</p>
+<p style="font-size:28px;line-height:1.3;color:#4A4F59">of rejections were real fraud</p>
+</div>
+<div style="flex:1;display:flex;flex-direction:column;gap:8px;border-top:4px solid #C8361F;padding:20px 0px 0px 0px">
+<p style="font-family:'Bricolage Grotesque', Georgia, serif;font-size:120px;font-weight:800;line-height:1.05;color:#C8361F">0/85</p>
+<p style="font-size:28px;line-height:1.3;color:#4A4F59">frauds slipped past an adaptive attacker</p>
+</div>
+</div>
+<div style="display:flex;flex-direction:column;gap:16px;background:#FBFBF8;border:1px solid #E3E4DF;border-radius:20px;padding:32px 40px">
+<p style="font-size:28px;font-weight:600;color:#14161A">An edited date of birth on a real card</p>
+<div style="display:flex;flex-direction:row;gap:24px;align-items:center">
+<p style="font-size:24px;color:#4A4F59;width:440px">Best pixel detector (TruFor)</p>
+<div style="width:1000px;height:28px;background:#E3E4DF;border-radius:6px"><div style="width:490px;height:28px;background:#8A8F99;border-radius:6px"></div></div>
+<p style="font-size:24px;font-weight:600;color:#4A4F59">0.49, chance</p>
+</div>
+<div style="display:flex;flex-direction:row;gap:24px;align-items:center">
+<p style="font-size:24px;color:#4A4F59;width:440px">Our signed-QR check</p>
+<div style="width:1000px;height:28px;background:#E3E4DF;border-radius:6px"><div style="width:950px;height:28px;background:#2B3BE6;border-radius:6px"></div></div>
+<p style="font-size:24px;font-weight:600;color:#2B3BE6">~95% caught</p>
+</div>
+</div>
+<p style="font-size:24px;color:#6E7380">Synthetic population · 444 test applications (85 fraud) · time-based split, 95% intervals, leakage checks. We claim the relative gains.</p>
+<p style="position:absolute;left:128px;bottom:64px;width:1200px;font-size:24px;color:#6E7380">TrueID Shield · Measured</p>
+<p style="position:absolute;right:128px;bottom:64px;width:200px;font-size:24px;color:#6E7380;text-align:right">06</p>
+<aside>On a time-based test split of 444 applications with 85 fraud cases, every fraud was caught. The fused system reaches ROC-AUC 0.998 against 0.78 for the document check alone. 95% of rejections were real fraud. An adaptive attacker that optimises what it controls got 0 of 85 frauds through. The headline comparison: a state-of-the-art pixel forgery detector is at chance on an edited date of birth, while the signed-QR check catches about 95%. The data is synthetic, so we claim relative gains, not real-world accuracy.</aside>
+</section>
