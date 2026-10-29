@@ -54,7 +54,8 @@ export type AppRow = {
 export type CaseDetail = AppRow & {
   modules: ModuleResult[]; shap: { feature: string; value: number | null; shap: number }[];
   summary: string; form_masked: Record<string, string>; audit: { ts: string; actor: string; action: string; note: string; hash?: string }[];
-  evidence: EvidenceCheck[]; rule_texts?: Record<string, string>; step_up?: { voice?: number; simulated?: boolean; affects_decision?: boolean };
+  evidence: EvidenceCheck[]; rule_texts?: Record<string, string>;
+  context?: { geo?: { lat: number; lng: number; accuracy?: number; ts?: string } | null; ip?: string | null; consent?: { version?: string; ts?: string }; ts?: string }; step_up?: { voice?: number; simulated?: boolean; affects_decision?: boolean };
 };
 
 export type EvidenceStatus = "PASS" | "FAIL" | "UNAVAILABLE" | "NOT_PROVIDED" | "SIMULATED";

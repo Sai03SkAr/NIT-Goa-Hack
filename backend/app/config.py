@@ -43,6 +43,8 @@ def _secret(name: str, env: str) -> str:
 ANALYST_KEY = _secret("analyst_key", "TRUEID_ANALYST_KEY")      # exchanged for an HttpOnly session cookie
 SESSION_SECRET = _secret("session_secret", "TRUEID_SESSION_SECRET")
 HMAC_KEY = _secret("hmac_key", "TRUEID_HMAC_KEY").encode()        # keyed ID hashes; rotating it re-keys the graph
+# shared by consortium members (app/consortium.py), distinct from HMAC_KEY so the internal graph key never leaves TrueID
+CONSORTIUM_KEY = _secret("consortium_key", "TRUEID_CONSORTIUM_KEY").encode()
 
 ENABLE_DEMO_TOOLS = os.getenv("TRUEID_ENABLE_DEMO_TOOLS", "false" if MODE == "restricted" else "true") == "true"
 TRUST_PROXY = os.getenv("TRUEID_TRUST_PROXY", "false") == "true"
@@ -52,7 +54,7 @@ ALLOWED_ORIGINS_RE = os.getenv("TRUEID_ALLOWED_ORIGINS_RE", r"https?://(localhos
 # Limits
 MAX_UPLOAD_BYTES = int(os.getenv("TRUEID_MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)))   # per image
 MAX_IMAGE_PIXELS = int(os.getenv("TRUEID_MAX_IMAGE_PIXELS", str(16_000_000)))
-MAX_FRAMES = int(os.getenv("TRUEID_MAX_FRAMES", "3"))           # neutral + two head turns
+MAX_FRAMES = int(os.getenv("TRUEID_MAX_FRAMES", "40"))          # a short head-turn video burst
 MAX_PAYLOAD_BYTES = int(os.getenv("TRUEID_MAX_PAYLOAD_BYTES", str(64 * 1024)))
 MAX_ACTIVE_JOBS = int(os.getenv("TRUEID_MAX_ACTIVE_JOBS", "4"))
 APPLY_RATE_PER_MIN = int(os.getenv("TRUEID_APPLY_RATE", "30"))  # submissions per network peer per minute

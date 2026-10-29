@@ -62,7 +62,8 @@ def test_forged_session_token_rejected():
     tok, sid = S.make_token("applicant", 60)
     assert S.read_token(tok, "applicant") == sid
     assert S.read_token(tok, "analyst") is None
-    assert S.read_token(tok[:-2] + "00", "applicant") is None
+    forged = tok[:-1] + ("1" if tok[-1] == "0" else "0")  # always a different signature (the old "00" suffix
+    assert S.read_token(forged, "applicant") is None        # left it unchanged ~1 run in 256)
 
 
 def test_media_path_traversal_blocked(client):

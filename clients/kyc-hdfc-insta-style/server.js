@@ -188,7 +188,7 @@ async function submit(body) {
   fd.append("payload", JSON.stringify(p));
   fd.append("card", card, "card.jpg");
   fd.append("selfie", selfie, "selfie.jpg");
-  (body.frames || []).slice(0, 3).map(dataUrlToBlob).filter(Boolean).forEach((b, i) => fd.append("frames", b, `frame${i}.jpg`));
+  (body.frames || []).slice(0, 40).map(dataUrlToBlob).filter(Boolean).forEach((b, i) => fd.append("frames", b, `frame${i}.jpg`));
   const r = await remote("/api/partner/v1/applications", { method: "POST", body: fd });
   return [r.status, await r.json()];
 }

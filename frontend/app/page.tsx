@@ -16,10 +16,10 @@ export default function Home() {
   return (
     <div className="min-h-[100dvh]">
       <header className="border-b border-line bg-panel">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Logo />
           <nav className="flex items-center gap-2">
-            <Link href="/dashboard" className="btn border-transparent bg-transparent hover:bg-bg-2">Analyst console</Link>
+            <Link href="/dashboard" className="btn hidden border-transparent bg-transparent hover:bg-bg-2 sm:inline-flex">Analyst console</Link>
             <Link href="/kyc" className="btn btn-primary">Start verification</Link>
           </nav>
         </div>
@@ -28,7 +28,7 @@ export default function Home() {
       <main>
         <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-16 lg:grid-cols-[1.15fr_1fr] lg:pt-20">
           <div>
-            <h1 className="max-w-2xl text-4xl font-semibold leading-[1.12] tracking-tight lg:text-[42px]">
+            <h1 className="display max-w-2xl text-4xl leading-[1.08] lg:text-[52px]">
               Every check passes alone. The fraud shows up when you compare them.
             </h1>
             <p className="mt-5 max-w-lg text-lg leading-relaxed text-muted">
@@ -51,7 +51,7 @@ export default function Home() {
         <section className="border-y border-line bg-panel">
           <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 lg:grid-cols-[1fr_1.6fr]">
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight">Five independent sources, one decision</h2>
+              <h2 className="display text-[28px]">Five independent sources, one decision</h2>
               <p className="mt-3 leading-relaxed text-muted">
                 At ICCV 2025, the best forgery detectors scored at chance on a carefully edited date of birth.
                 A single check can be beaten. Five checks that must agree are much harder to fool.
@@ -69,7 +69,7 @@ export default function Home() {
         </section>
 
         <section className="mx-auto max-w-6xl px-6 py-16">
-          <h2 className="text-2xl font-semibold tracking-tight">Measured on held-out data, then attacked</h2>
+          <h2 className="display text-[28px]">Measured on held-out data, then attacked</h2>
           <p className="mt-3 max-w-2xl leading-relaxed text-muted">
             Trained on the first 20 days of applications and tested on the last 10, including genuine people who look unusual:
             families sharing a phone, students on one hostel network, names written differently.

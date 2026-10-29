@@ -27,36 +27,67 @@ def _tiny(img):
     return cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (48, 48), interpolation=cv2.INTER_AREA).astype(np.float32)
 
 
+MIN_FRAMES = 6  # a real head-turn burst; too few means stills were uploaded
+
+
+def _motion(r: list[float], sequence: list[str]) -> tuple[bool, list[str], dict]:
+    """Analyse the nose-position trajectory of a frame burst (pure, unit-tested).
+    A live turn sweeps CONTINUOUSLY through middle angles; a few still photos jump straight to the extreme with
+    nothing in between. Requires: real range of movement, no single big jump, intermediate frames on the way to each
+    requested turn, and the turns in the requested order."""
+    n = len(r)
+    base = float(np.median(r[:max(1, n // 5)]))  # first ~20% of the burst is the neutral pose
+    d = [x - base for x in r]
+    rng = max(d) - min(d)
+    detail = {"n": n, "range": round(rng, 3)}
+    if rng < TURN_DELTA:
+        return False, ["BIO_LIVENESS_FAIL"], detail  # head never turned
+    max_step = max(abs(d[i + 1] - d[i]) for i in range(n - 1))
+    detail["max_step"] = round(max_step, 3)
+    codes = []
+    if max_step > 0.5 * rng + 0.03:  # the move happened in one jump: a slideshow of stills, not a live sweep
+        codes.append("BIO_NO_MOTION")
+
+    def reached(peak: float) -> bool:  # extreme hit AND at least one frame partway there
+        lo, hi = sorted((0.25 * peak, 0.75 * peak))
+        return any(lo <= x <= hi for x in d)
+
+    order = []
+    for name, peak, ok_dir in (("turn_left", max(d), max(d) >= TURN_DELTA), ("turn_right", min(d), min(d) <= -TURN_DELTA)):
+        if name in sequence and ok_dir and reached(peak):
+            order.append((d.index(peak), name))
+    done = [name for _, name in sorted(order)]
+    if done != sequence:  # missing a turn, or turns out of the requested order
+        codes.append("BIO_LIVENESS_FAIL")
+    return not codes, codes, detail
+
+
 def verify_challenge(frames_bgr: list[np.ndarray], sequence: list[str], selfie_emb) -> dict:
-    """Server-side verification of a server-issued head-turn challenge.
-    frames = [neutral, one frame per step in `sequence`], raw (unmirrored) camera frames.
-    PASS needs: exactly one face per frame, every frame the same person as the selfie, distinct frames,
-    and each step's head turn in the requested direction relative to the neutral frame."""
-    codes, detail = [], {"sequence": sequence}
-    if len(frames_bgr) != 1 + len(sequence):
-        return {"status": P.FAIL, "codes": ["BIO_CHALLENGE_FRAMES"], "source": "server", "detail": detail}
-    tiny = [_tiny(f) for f in frames_bgr]
-    if min(float(np.abs(tiny[i] - tiny[j]).mean()) for i in range(len(tiny)) for j in range(i + 1, len(tiny))) < 1.0:
-        codes.append("BIO_FRAMES_DUPLICATE")  # the same still submitted several times
+    """Server-side verification of a server-issued head-turn challenge against a BURST of camera frames.
+    PASS needs: enough frames, one face per frame all matching the selfie, and a continuous head-turn motion that
+    performs the requested sequence. A set of still photos fails the motion check (BIO_NO_MOTION).
+
+    shortcut: this defeats still-photo submission, not a full video replay of the victim; production needs certified
+    presentation-attack detection (ISO/IEC 30107-3) or a native app with device attestation."""
+    detail = {"sequence": sequence, "frames": len(frames_bgr)}
+    if len(frames_bgr) < MIN_FRAMES:
+        return {"status": P.FAIL, "codes": ["BIO_CHALLENGE_FRAMES"], "source": "server", "detail": detail, "consistent": None}
     found = [F.faces(f) for f in frames_bgr]
-    detail["faces_per_frame"] = [len(x) for x in found]
-    if any(len(x) != 1 for x in found):
-        codes.append("BIO_FRAME_FACE_COUNT")
-        return {"status": P.FAIL, "codes": codes, "source": "server", "detail": detail, "consistent": None}
-    fs = [x[0] for x in found]
+    if any(len(x) > 1 for x in found):  # someone else in the frame
+        return {"status": P.FAIL, "codes": ["BIO_FRAME_FACE_COUNT"], "source": "server", "detail": detail, "consistent": None}
+    fs = [x[0] for x in found if len(x) == 1]
+    detail["faces_found"] = len(fs)
+    if len(fs) < MIN_FRAMES:
+        return {"status": P.FAIL, "codes": ["BIO_FRAME_FACE_COUNT"], "source": "server", "detail": detail, "consistent": None}
     thr = F.threshold()
     anchor = selfie_emb if selfie_emb is not None else fs[0]["emb"]
     sims = [F.sim(anchor, f["emb"]) for f in fs]
-    detail["sim_to_selfie"] = [round(x, 3) for x in sims]
     consistent = min(sims) >= thr
+    detail["sim_min"] = round(min(sims), 3)
+    ok, codes, mdetail = _motion([f["nose_ratio"] for f in fs], sequence)
+    detail.update(mdetail)
     if not consistent:
-        codes.append("BIO_FRAMES_INCONSISTENT")
-    base = fs[0]["nose_ratio"]
-    deltas = [f["nose_ratio"] - base for f in fs[1:]]
-    detail["turn_deltas"] = [round(d, 3) for d in deltas]
-    turned = all((d >= TURN_DELTA) if step == "turn_left" else (d <= -TURN_DELTA) for step, d in zip(sequence, deltas))
-    if not turned:
-        codes.append("BIO_LIVENESS_FAIL")
+        codes = codes + ["BIO_FRAMES_INCONSISTENT"]
     return {"status": P.PASS if not codes else P.FAIL, "codes": codes, "source": "server", "detail": detail,
             "consistent": consistent}
 

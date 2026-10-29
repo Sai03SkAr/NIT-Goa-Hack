@@ -188,7 +188,7 @@ async function submit(body) {
   fd.append("payload", JSON.stringify(p));
   fd.append("card", card, "card.jpg");
   fd.append("selfie", selfie, "selfie.jpg");
-  (body.frames || []).slice(0, 3).map(dataUrlToBlob).filter(Boolean).forEach((b, i) => fd.append("frames", b, `frame${i}.jpg`));
+  (body.frames || []).slice(0, 40).map(dataUrlToBlob).filter(Boolean).forEach((b, i) => fd.append("frames", b, `frame${i}.jpg`));
   const r = await remote("/api/partner/v1/applications", { method: "POST", body: fd });
   return [r.status, await r.json()];
 }
@@ -323,7 +323,10 @@ async function docCheck({ kind, claims = {}, owner = "", file, quality = {} }) {
 /** What the applicant is allowed to see: never the score or the reasons. */
 function applicantView(v) {
   if (v.status !== "completed") return { status: v.status || "processing" };
-  return { status: "completed", outcome: v.decision === "APPROVE" ? "approved" : v.decision === "REJECT" ? "declined" : "review" };
+  const outcome = v.decision === "APPROVE" ? "approved" : v.decision === "REJECT" ? "declined" : "review";
+  // TrueID's coaching names only issues the applicant can fix (photo quality, typos, the head-turn check)
+  const tips = outcome === "review" ? (v.applicant_coaching?.tips || []).map((t) => ({ title: t.title, steps: t.steps })) : [];
+  return { status: "completed", outcome, tips };
 }
 
 // ---------- HTTP ----------

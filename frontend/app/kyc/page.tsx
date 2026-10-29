@@ -41,7 +41,7 @@ function Wizard() {
       const payload = {
         form: { ...form, id_number: form.id_number.replace(/\D/g, ""), pan: form.pan.toUpperCase().trim() },
         device: { device_id: await deviceId(), user_agent: navigator.userAgent, camera_labels: cams, active_camera: active || null },
-        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion }, challenge_id: challengeId,
+        telemetry: tel.snapshot(), consent: { accepted: true, version: consentVersion }, challenge_id: challengeId, geo: await getGeo(),
       };
       fd.append("payload", JSON.stringify(payload));
       fd.append("card", card!);
@@ -94,12 +94,13 @@ function Consent({ onNext }: { onNext: () => void }) {
   return (
     <div className="panel max-w-3xl p-8">
       <ShieldCheck className="size-8 text-brand" />
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight">Verify your identity</h1>
+      <h1 className="display mt-4 text-[30px]">Verify your identity</h1>
       <p className="mt-2 text-muted">Takes about 2 minutes. We'll check your ID card, take a short selfie with a liveness challenge and confirm your details with the issuing registries.</p>
       <ul className="mt-6 space-y-3 text-sm text-muted">
         {["ID numbers are linked only through keyed hashes and shown masked (last 4 digits only).",
           "Your selfie and face-check frames are compared on our server with your card photo and the issuer's registry photo. Images are deleted after 30 days.",
           "We record how the form is filled (timing, not content) to detect bots and scripted fraud.",
+          "With your permission we record your location and network at the time of the check, as digital KYC rules require.",
           "An AI assistant may summarise the result for a human reviewer. It never makes the decision."].map((t) => (
           <li key={t} className="flex gap-3"><Check className="mt-0.5 size-4 shrink-0 text-brand" />{t}</li>
         ))}
@@ -135,7 +136,7 @@ function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form
   const valid = missing.length === 0;
   return (
     <div className="panel p-8">
-      <h2 className="text-xl font-semibold tracking-tight">Your details</h2>
+      <h2 className="display text-[22px]">Your details</h2>
       <p className="mt-1 text-sm text-muted">Enter them exactly as they appear on your ID card.</p>
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         {FIELDS.map(({ k, label, ph, span, mono }) => (
@@ -161,6 +162,14 @@ function Details({ form, setForm, tel, onNext }: { form: Form; setForm: (f: Form
   );
 }
 
+/** Live GPS fix for the RBI V-CIP geo-tag; null if the browser has no geolocation or the user declines. */
+async function getGeo(): Promise<Record<string, number | string> | null> {
+  if (!navigator.geolocation) return null;
+  return new Promise((res) => navigator.geolocation.getCurrentPosition(
+    (g) => res({ lat: g.coords.latitude, lng: g.coords.longitude, accuracy: Math.round(g.coords.accuracy), ts: new Date().toISOString() }),
+    () => res(null), { timeout: 2500, maximumAge: 60000 }));
+}
+
 /** 03082006 -> 03/08/2006 as the user types (keeps deletions natural). */
 function fmtDob(v: string) {
   const d = v.replace(/\D/g, "").slice(0, 8);
@@ -171,7 +180,7 @@ function DocStep({ card, setCard, onBack, onNext }: { card: File | null; setCard
   const url = useMemo(() => (card ? URL.createObjectURL(card) : ""), [card]);
   return (
     <div className="panel p-8">
-      <h2 className="text-xl font-semibold tracking-tight">Upload your National ID card</h2>
+      <h2 className="display text-[22px]">Upload your National ID card</h2>
       <p className="mt-2 text-sm text-muted">Front side, flat and fully visible. The signed QR code must be readable.</p>
       <label className={clsx("mt-6 grid cursor-pointer place-items-center overflow-hidden rounded-xl border border-dashed border-line-2 bg-bg-2/60 transition hover:border-brand",
         card ? "p-3" : "h-64")}>
@@ -222,18 +231,26 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
     try { ch = await post<ServerChallenge>("/api/liveness/challenge"); } catch (e) { setHint(`Could not start the face check: ${e}`); return; }
     const list = ch.sequence;
     setChs(list); setIdx(0); setState("challenge");
-    result.current = { frames: [await grabFrame(v)], done: [], id: ch.challenge_id };
-    result.current.selfie = result.current.frames[0];
+    const neutral = await grabFrame(v);
+    result.current = { frames: [neutral], done: [], id: ch.challenge_id };
+    result.current.selfie = neutral;
+    // capture a continuous burst through the whole challenge (~1 frame / 150ms): the server checks that the head
+    // sweeps smoothly, so a few still photos can't stand in for a live turn. Capped under the server frame limit.
+    let lastCap = 0;
+    const capture = async (now: number) => {
+      if (now - lastCap > 150 && result.current.frames.length < 34) { lastCap = now; result.current.frames.push(await grabFrame(v)); }
+    };
     for (let i = 0; i < list.length; i++) {
       setIdx(i);
       const ok = await new Promise<boolean>((resolve) => {
         const t0 = performance.now();
-        const tick = () => {
+        const tick = async () => {
           const el = (performance.now() - t0) / 1000;
           setLeft(Math.max(0, Math.ceil(8 - el)));
           if (el > 8) return resolve(false);
           const s = signal(lm.detectForVideo(v, performance.now()));
           setHint(s.faces === 0 ? "No face in frame" : s.faces > 1 ? "Only one person please" : "");
+          await capture(performance.now());
           if (satisfied(list[i], s)) return resolve(true);
           requestAnimationFrame(tick);
         };
@@ -241,7 +258,6 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
       });
       if (!ok) { setState("failed"); return; }
       result.current.done.push(list[i]);
-      result.current.frames.push(await grabFrame(v));
     }
     setState("passed");
     stopCamera();
@@ -281,7 +297,7 @@ function SelfieStep({ busy, onBack, onDone }: { busy: boolean; onBack: () => voi
         </div>
       </div>
       <div className="panel flex flex-col p-6">
-        <h2 className="text-xl font-semibold tracking-tight">Face check</h2>
+        <h2 className="display text-[22px]">Face check</h2>
         <p className="mt-2 text-sm text-muted">Turn your head left and right in the order shown, 8 seconds per step. The order is chosen by our server for this session, and the frames are checked there.</p>
         <div className="mt-5 space-y-2 text-sm">
           <Row ok={state !== "idle" && state !== "loading"} text="Camera on" />

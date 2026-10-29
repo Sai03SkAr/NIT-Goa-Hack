@@ -1,67 +1,48 @@
 "use client";
-import { useState } from "react";
-import Link from "next/link";
-import { Send, Wrench } from "lucide-react";
-import { Section, readable } from "@/components/ui";
-import { post } from "@/lib/api";
+import { BarChart3, FileSearch, GraduationCap, Network, RotateCcw, ShieldCheck } from "lucide-react";
+import { PageHeader, Section } from "@/components/ui";
+import { Composer, Conversation, useAssistant } from "@/components/Assistant";
 
-type Msg = { role: "user" | "assistant"; text: string; source?: string; tools?: { tool: string; args: Record<string, unknown>; result: unknown }[] };
+const CAN = [
+  { icon: BarChart3, title: "Read the analytics", text: "How fraud is trending, the most common signals this week, how many cases wait for review." },
+  { icon: FileSearch, title: "Explain a case", text: "Why an application was flagged, which checks failed, what to verify before deciding. Mention its ID." },
+  { icon: Network, title: "Follow the links", text: "Which applications share a face, device or typing rhythm, and how many names a ring uses." },
+  { icon: GraduationCap, title: "Explain the terms", text: "Recall, false alarms, ROC-AUC, PSI, drift, liveness, the consortium. Ask what any number means." },
+];
 
-const EXAMPLES = ["Why is A00123 linked to other applications?", "Explain bio_sim_card_registry", "Compare A00010 and A00011"];
-
-export default function Chat() {
-  const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [q, setQ] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function ask(question: string) {
-    if (!question.trim()) return;
-    setMsgs((m) => [...m, { role: "user", text: question }]);
-    setQ(""); setBusy(true);
-    try {
-      const r = await post<{ answer: string; source: string; tools: Msg["tools"] }>("/api/chat", { question });
-      setMsgs((m) => [...m, { role: "assistant", text: readable(r.answer), source: r.source, tools: r.tools }]);
-    } catch (e) {
-      setMsgs((m) => [...m, { role: "assistant", text: `Error: ${e}` }]);
-    } finally { setBusy(false); }
-  }
-
+/** The full-page Investigator: the same conversation as the floating "Ask TrueID" panel, with room to dig in. */
+export default function Investigator() {
+  const a = useAssistant();
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Investigator</h1>
-        <p className="mt-1 text-sm text-muted">Ask about applications by ID or about model features. Answers come only from case records and the identity graph; the assistant cannot change a decision.</p>
+    <div className="space-y-6">
+      <PageHeader eyebrow="Operations" title="Investigator"
+        right={!!a.msgs.length && <button className="btn min-h-11" onClick={a.clear}><RotateCcw className="size-4" />New conversation</button>}>
+        Your analytics assistant. It answers from the live database and the evaluation files, keeps the conversation you started in the
+        floating panel, and can explain but never change a decision.
+      </PageHeader>
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="panel flex min-h-[60dvh] flex-col">
+          <div className="flex-1 p-5"><Conversation a={a} large /></div>
+          <div className="sticky bottom-0 rounded-b-2xl border-t border-line bg-panel p-3"><Composer a={a} autoFocus /></div>
+        </section>
+        <aside className="space-y-5 xl:sticky xl:top-6">
+          <Section title="What it can do">
+            <ul className="space-y-4">
+              {CAN.map((c) => (
+                <li key={c.title} className="flex gap-3">
+                  <c.icon className="mt-0.5 size-4 shrink-0 text-brand" />
+                  <div><div className="text-sm font-medium">{c.title}</div><div className="text-[13px] leading-snug text-muted">{c.text}</div></div>
+                </li>
+              ))}
+            </ul>
+          </Section>
+          <Section title="How answers are made">
+            <p className="flex gap-2 text-[13px] leading-relaxed text-muted"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-approve" />
+              Facts are looked up first (totals, the case record, the graph, evaluation, the learning loop). With an AI key (Groq or Grok) the
+              wording is natural; an answer that mentions an ID or code not in the facts is thrown away. Without a key, answers are built from the facts directly.</p>
+          </Section>
+        </aside>
       </div>
-      <Section title="Conversation">
-        <div className="space-y-4">
-          {!msgs.length && (
-            <div className="flex flex-wrap gap-2">
-              {EXAMPLES.map((e) => <button key={e} className="chip hover:text-fg" onClick={() => ask(e)}>{e}</button>)}
-            </div>
-          )}
-          {msgs.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "ml-auto max-w-[80%] rounded-xl bg-brand-soft px-4 py-2.5 text-sm" : "max-w-[90%] text-sm leading-relaxed"}>
-              <p>{linkIds(m.text)}</p>
-              {m.role === "assistant" && m.source && <div className="mt-1 text-[11px] text-dim">{m.source === "llm" ? "Worded by Groq from the lookup results below; it cannot add findings" : "Built from the lookup results (no AI)"}</div>}
-              {!!m.tools?.length && (
-                <details className="mt-2 rounded-lg border border-line p-2 text-xs text-muted">
-                  <summary className="flex cursor-pointer items-center gap-1.5"><Wrench className="size-3" />{m.tools.length} tool call{m.tools.length > 1 ? "s" : ""}</summary>
-                  <pre className="mono mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px]">{JSON.stringify(m.tools, null, 1)}</pre>
-                </details>
-              )}
-            </div>
-          ))}
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); ask(q); }}>
-            <input className="input" placeholder="e.g. Why are RSAB120 and RSAB121 linked?" value={q} onChange={(e) => setQ(e.target.value)} />
-            <button className="btn btn-primary" disabled={busy || !q.trim()}><Send className="size-4" />{busy ? "…" : "Ask"}</button>
-          </form>
-        </div>
-      </Section>
     </div>
   );
-}
-
-function linkIds(text: string) {
-  return text.split(/\b((?:A\d{5}|L[0-9A-F]{8}|RS[0-9A-F]{4}\d+))\b/).map((part, i) =>
-    i % 2 ? <Link key={i} href={`/dashboard/case/${part}`} className="mono text-brand hover:underline">{part}</Link> : part);
 }

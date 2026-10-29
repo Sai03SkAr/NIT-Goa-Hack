@@ -24,14 +24,12 @@ def classify(f: dict) -> str:
         return "tampered" if g("reg_name_sim", 1) >= 0.8 else "first_party"
     if g("bio_virtual_cam"):
         return "injection"
+    if g("cor_device_people_7d") >= 2 and not (g("bio_face_reuse_diff_name") or g("beh_ks_links") or g("beh_email_seq")):
+        return "mule"  # several real people, each their own face and typing, one device: a recruiter's phone
     if g("cor_ring_score") > 0 or (g("bio_face_reuse_diff_name") > 0 and g("cor_comp_size") >= 3) or g("beh_email_seq") > 0:
         return "ring"
-    if g("cor_device_people_7d") >= 2 and g("bio_face_reuse_diff_name") == 0:
-        return "mule"  # several genuine-looking people, each their own face, one device: a recruiter's phone
     if (g("beh_fill_time", 99) < 20 and g("beh_paste_frac") >= 0.6) or g("beh_iki_cv", 1) < 0.15 or g("beh_vel_device_24h") >= 3:
         return "bot"
-    if not g("bio_liveness_pass", 1):
-        return "injection"
     if g("reg_id_found") == 0:
         return "third_party"
     if g("bio_sim_registry", 1) < threshold() or g("reg_name_sim", 1) < 0.8 or g("doc_sig_invalid"):
@@ -40,7 +38,8 @@ def classify(f: dict) -> str:
         return "tampered"
     if g("reg_sim_age_days", 999) < 30 and g("reg_ckyc", 1) == 0:
         return "third_party"
-    return "inconclusive"  # held for review without a recognisable fraud pattern: say so, never "proceed"
+    # nothing else matched: a failed/absent liveness alone is incomplete evidence, not proof of a replay attack
+    return "inconclusive"
 
 
 def action(ft: str) -> dict:

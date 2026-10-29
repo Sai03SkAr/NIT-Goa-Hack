@@ -34,6 +34,7 @@ REASONS: dict[str, str] = {
     "BIO_CHALLENGE_INVALID": "The liveness challenge was expired, reused or issued to another session",
     "BIO_CHALLENGE_FRAMES": "Wrong number of liveness frames for the challenge",
     "BIO_FRAMES_DUPLICATE": "Liveness frames are copies of one still image",
+    "BIO_NO_MOTION": "Liveness frames show no continuous head movement (looks like still photos, not a live turn)",
     "BIO_FRAME_FACE_COUNT": "A liveness frame shows no face or more than one face",
     "BIO_VOICE_LOW": "Voice check score low (simulated, never used in the decision)",
     # behavior
@@ -66,6 +67,9 @@ REASONS: dict[str, str] = {
     "COR_SHARED_ID": "ID number used by another applicant",
     "COR_MULE_HERDING": "This device onboarded several different people this week (possible mule recruitment)",
     "COR_FAMILY_PATTERN": "Shared address/phone looks like a family (suspicion reduced)",
+    "COR_NET_ID_OTHER_NAME": "This ID number or PAN was used under a different name at another institution",
+    "COR_NET_PRIOR_REJECT": "An identifier on this application was rejected for fraud at another institution",
+    "COR_NET_DEVICE_MANY": "This device onboarded several different people at other institutions this week",
     # policy
     "MODEL_UNAVAILABLE": "Risk model not loaded or out of date; a human decides",
 }
@@ -79,11 +83,12 @@ def code_text(code: str) -> str:
     if code in REASONS:
         return REASONS[code]
     if code.startswith("EV_"):
-        from app.policy import REQUIRED
+        from app.policy import INFORMATIONAL, REQUIRED
         for st, word in STATUS_TEXT.items():
             if code.endswith("_" + st):
                 check = code[3:-len(st) - 1].lower()
-                return f"{REQUIRED.get(check, (check,))[0]}: {word}"
+                label = {**REQUIRED, **INFORMATIONAL}.get(check, (check,))[0]
+                return f"{label}: {word}"
     return code
 
 

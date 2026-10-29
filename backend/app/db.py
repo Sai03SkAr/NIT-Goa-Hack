@@ -32,6 +32,7 @@ class Application(SQLModel, table=True):
     model_status: str = ""
     policy_version: str = ""
     step_up: dict = Field(default_factory=dict, sa_column=Column(JSON))    # simulated, display only
+    context: dict = Field(default_factory=dict, sa_column=Column(JSON))    # V-CIP: geo-tag, network, consent
     summary: str = ""
     stepped_up: bool = False
     status: str = "open"                       # open | approved | rejected (analyst)
@@ -54,6 +55,29 @@ class AuditLog(SQLModel, table=True):
 
 def init():
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns():
+    """Additive migration: a database created by an older version gets new columns, filled with the model default.
+    create_all() only creates missing tables, so without this a pulled update breaks every query on an existing DB."""
+    from sqlalchemy import inspect, text
+    models = {c.__tablename__: c for c in SQLModel.__subclasses__() if hasattr(c, "__tablename__")}
+    insp = inspect(engine)
+    with engine.begin() as c:
+        for t in SQLModel.metadata.sorted_tables:
+            if not insp.has_table(t.name):
+                continue
+            have = {col["name"] for col in insp.get_columns(t.name)}
+            for col in t.columns:
+                if col.name in have:
+                    continue
+                c.execute(text(f'ALTER TABLE "{t.name}" ADD COLUMN "{col.name}" {col.type.compile(engine.dialect)}'))
+                f = models[t.name].model_fields.get(col.name) if t.name in models else None
+                default = f.get_default(call_default_factory=True) if f else None
+                if default is not None:
+                    c.execute(text(f'UPDATE "{t.name}" SET "{col.name}" = :v'),
+                              {"v": json.dumps(default) if isinstance(default, (dict, list)) else default})
 
 
 def session() -> Session:

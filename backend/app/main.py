@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app import db, liveness_sessions, policy
+from app import db, learning, liveness_sessions, policy
 from app.schemas import code_text
 from app import security as S
 from app.config import (ANALYST_SESSION_TTL_S, APPLY_RATE_PER_MIN, BANDS, CONSENT_VERSION, ENABLE_DEMO_TOOLS, GEN,
@@ -40,6 +40,7 @@ async def lifespan(_app):
     db.init()
     purge_expired_uploads()
     P.Runtime.bands = dict(BANDS)
+    learning.restore(P.Runtime)  # a band change an analyst approved survives restarts
     P.Runtime.hist = load_history()
     P.pipeline()
     threading.Thread(target=_warm, daemon=True).start()
@@ -228,12 +229,21 @@ class Consent(BaseModel):
     version: str
 
 
+class Geo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    lat: float = Field(ge=-90, le=90)
+    lng: float = Field(ge=-180, le=180)
+    accuracy: float | None = None   # metres
+    ts: str | None = None
+
+
 class ApplyIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
     form: FormIn
     device: DeviceIn = Field(default_factory=DeviceIn)
     telemetry: TelemetryIn = Field(default_factory=TelemetryIn)
     consent: Consent
+    geo: Geo | None = None           # RBI V-CIP geo-tag; null if the applicant declines location
     challenge_id: str | None = Field(default=None, max_length=64)
 
 
@@ -329,10 +339,11 @@ async def apply(request: Request, payload: str = Form(..., max_length=MAX_PAYLOA
     (UPLOADS / f"{app_id}_card.jpg").write_bytes(card_raw)
     (UPLOADS / f"{app_id}_selfie.jpg").write_bytes(selfie_raw)
     device = data.device.model_dump() | {"ip": S.signal_ip(request)}  # never the client's claim about its own IP
+    geo = data.geo.model_dump() if data.geo else None
     a = {"app_id": app_id, "ts": datetime.now().isoformat(timespec="seconds"), "source": "live",
          "form": data.form.model_dump(), "device": device,
          "telemetry": {k: v for k, v in data.telemetry.model_dump().items() if v is not None},
-         "challenge": challenge, "consent": data.consent.model_dump() | {"ts": datetime.now().isoformat(timespec="seconds")},
+         "challenge": challenge, "consent": data.consent.model_dump() | {"ts": datetime.now().isoformat(timespec="seconds")}, "geo": geo,
          "card_sha256": hashlib.sha256(card_raw).hexdigest(), "selfie_sha256": hashlib.sha256(selfie_raw).hexdigest(),
          "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg"}
     job = Job(app_id, sid)
@@ -373,7 +384,8 @@ def result(app_id: str, request: Request):
         return {"app_id": app_id, "done": True, "error": True}
     reasons = sorted({x["code"] for m in r.modules for x in m.get("reasons", []) if x.get("weight", 0) > 0})
     return {"app_id": app_id, "done": True, "band": r.band, "reasons": reasons,
-            "evidence": [{k: e[k] for k in ("check", "label", "status", "required")} for e in r.evidence]}
+            "evidence": [{k: e[k] for k in ("check", "label", "status", "required")} for e in r.evidence],
+            "coaching": learning.tips_for(r, learning._rows())}
 
 
 # ------------------------------------------------------------------ analyst console
@@ -461,6 +473,8 @@ def override(app_id: str, o: Override, request: Request):
         s.commit()
         flag = " [against automated " + r.band + "]" if against else ""
         db.audit(s, app_id, f"override:{prev}->{o.status}{flag}", o.note.strip(), actor)
+    if o.status in ("approved", "rejected"):
+        learning.note_label()
     return {"ok": True, "against_automated": against}
 
 
@@ -593,6 +607,65 @@ def metrics(request: Request):
     return {"metrics": m, "ablation": _json("ablation.json"), "provenance": prov}
 
 
+# ------------------------------------------------------------------ learning loop (analyst-only, see app/learning.py)
+@app.get("/api/learning/overview")
+def learning_overview():
+    return P.jsonable(learning.overview(P.Runtime.bands))
+
+
+@app.get("/api/learning/drift")
+def learning_drift():
+    return P.jsonable(learning.drift())
+
+
+@app.get("/api/learning/feedback")
+def learning_feedback():
+    return P.jsonable(learning.feedback())
+
+
+@app.get("/api/learning/proposals")
+def learning_proposals(status: str | None = None):
+    return P.jsonable(learning.proposals(status))
+
+
+@app.get("/api/learning/cycles")
+def learning_cycles():
+    return P.jsonable(learning.cycles())
+
+
+@app.post("/api/learning/cycle")
+def learning_cycle():
+    return P.jsonable(learning.run_cycle("manual", P.Runtime.bands))
+
+
+class LearningDecision(BaseModel):
+    action: str  # apply | dismiss | acknowledge | rollback
+
+
+@app.post("/api/learning/proposals/{pid}")
+def learning_decide(pid: str, d: LearningDecision, request: Request):
+    try:
+        return P.jsonable(learning.decide(pid, d.action, S.analyst_actor(request), P.Runtime))
+    except KeyError:
+        raise HTTPException(404, "unknown proposal")
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/learning/coaching")
+def learning_coaching():
+    return {"friction": learning.friction(), "catalog": [{"check": c, "title": t, "steps": st} for c, (t, st) in learning.TIPS.items()]}
+
+
+@app.get("/api/learning/tips/{app_id}")
+def learning_tips(app_id: str):
+    with db.session() as s:
+        r = s.get(db.Application, app_id)
+    if r is None:
+        raise HTTPException(404)
+    return learning.tips_for(r, learning._rows())
+
+
 @app.get("/api/attacks")
 def attacks():
     return _json("attacks.json")
@@ -631,15 +704,15 @@ def attack_live(req: LiveAttack):
     today = datetime.fromisoformat(a["ts"]).date()
     before = doc.assess(doc.extract(card), form, today)
     after = doc.assess(doc.extract(after_img), form_after, today)
-    ok, enc = cv2.imencode(".jpg", after_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    jpg = lambda img: "data:image/jpeg;base64," + base64.b64encode(cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()).decode()
     from app.modules.document import trufor
     tf = trufor.available()
     pick = lambda r, img: {"risk": r.risk, "reasons": [x.model_dump() for x in r.reasons], "forensic": r.features["doc_forensic"],
                            "qr_valid": r.evidence["qr_signature_valid"], "qr_status": r.evidence.get("qr_status"),
                            "ocr": r.evidence["ocr"], "qr": r.evidence["qr"],
                            "trufor": trufor.analyze(doc.normalize(img)) if tf else None}
-    return P.jsonable({"before": pick(before, card), "after": pick(after, after_img), "truth": a["fraud_type"],
-                       "image": "data:image/jpeg;base64," + base64.b64encode(enc.tobytes()).decode()})
+    return P.jsonable({"before": pick(before, card) | {"image": jpg(card)}, "after": pick(after, after_img) | {"image": jpg(after_img)},
+                       "truth": a["fraud_type"]})
 
 
 class Ask(BaseModel):
@@ -650,6 +723,26 @@ class Ask(BaseModel):
 def chat(q: Ask):
     from app.llm.investigator import answer
     return P.jsonable(answer(q.question[:1000], P.Runtime.hist))
+
+
+class AssistantTurn(BaseModel):
+    role: str
+    text: str = Field(default="", max_length=2000)
+
+
+class AssistantAsk(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    path: str | None = Field(default=None, max_length=200)        # the page the analyst is on
+    context_id: str | None = Field(default=None, max_length=40)   # e.g. the open case
+    history: list[AssistantTurn] = Field(default_factory=list, max_length=12)
+
+
+@app.post("/api/assistant")
+def assistant(q: AssistantAsk):
+    """Ask TrueID: answers about the live analytics, a case, a term or a page (app/llm/assistant.py). Read-only."""
+    from app.llm.assistant import ask
+    return P.jsonable(ask(q.question, q.path, q.context_id, [h.model_dump() for h in q.history],
+                          P.Runtime.hist, P.Runtime.bands))
 
 
 @app.get("/api/health")
@@ -682,10 +775,11 @@ def ring_sim():
 
 
 @app.post("/api/testkit")
-def testkit():
-    """Fresh test identities + cards + expected outcomes (see docs/TESTING.md)."""
+def testkit(encrypted: int = 0):
+    """Fresh test identities + cards + expected outcomes (see docs/TESTING.md). ?encrypted=N: N genuine people with
+    signed and encrypted QR cards instead of the scenario set."""
     from app.testkit import build_testkit
-    return build_testkit(P.Runtime.hist)
+    return build_testkit(P.Runtime.hist, encrypted=max(0, min(encrypted, 20)))
 
 
 @app.post("/api/demo/kit")

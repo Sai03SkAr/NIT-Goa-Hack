@@ -36,6 +36,9 @@ Two KYC-only replicas follow real Indian flows: **Tideway** (Zerodha-style, port
 liveness) and **Meridian Bank** (HDFC InstaAccount-style, port 3012, uploaded selfie). See
 **[clients/KYC-REPLICAS.md](clients/KYC-REPLICAS.md)**. Partners call `/api/partner/v1/*` with an `X-Partner-Key`.
 Setup and end-to-end testing: **[docs/PARTNER_INTEGRATION.md](docs/PARTNER_INTEGRATION.md)**; check the connection with `python scripts/check_partner_connection.py`.
+Cross-institution fraud network (banks share keyed hashes, never customer data): `backend/app/consortium.py`, member client `scripts/consortium_client.py`. Mentor/judge summaries: **[docs/DELIVERABLES_PS3.md](docs/DELIVERABLES_PS3.md)**, **[docs/ONE_PAGER.md](docs/ONE_PAGER.md)**.
+Governed self-learning (TrueID proposes band, model and coaching improvements from analyst outcomes; nothing changes without an analyst; applicants get tips for fixable issues only): **[docs/LEARNING_LOOP.md](docs/LEARNING_LOOP.md)**.
+Analytics assistant (floating **Ask TrueID** panel + Investigator page; optional Groq / xAI Grok wording, grounded in live data): **[docs/ASSISTANT.md](docs/ASSISTANT.md)**. Latest state and hand-off: **[docs/HANDOFF_2026-10-29.md](docs/HANDOFF_2026-10-29.md)**.
 
 ## Testing
 See **[docs/TESTING.md](docs/TESTING.md)**.
@@ -58,9 +61,16 @@ integrity (photo not seen before, no AI-generator marker), device network (no mu
 simulated and shown only.
 
 **Liveness protocol.** The server issues a challenge (turn left / turn right in random order) bound to the applicant's
-session, valid once for 3 minutes. The browser returns a neutral frame plus one frame per step. The server checks
-exactly one face per frame, that every frame is the selfie's person (1:1 threshold), that frames are not copies,
-and the turn direction from facial landmarks. An uploaded selfie is NOT_PROVIDED and always goes to a person.
+session, valid once for 3 minutes. The browser captures a short **video burst** through the challenge and the server
+checks it is one live person: one face per frame all matching the selfie, and a **continuous head-turn** performing the
+requested sequence. A few still photos jump straight to the turned pose with nothing in between, so they fail with
+`BIO_NO_MOTION`; an uploaded selfie is NOT_PROVIDED. Both go to a person, never auto-approve. This defeats still-photo
+spoofing but not a full video replay of the victim: production needs certified presentation-attack detection
+(ISO/IEC 30107-3) or a native app with device attestation. See [docs/VCIP_ALIGNMENT.md](docs/VCIP_ALIGNMENT.md).
+
+**RBI V-CIP extras.** With consent the browser records a GPS geo-tag and the session's network IP; both are shown on
+the case page and kept as informational evidence (recorded, never scored: a self-reported fix can't be trusted, and on
+localhost there is no public IP to geolocate).
 
 Real-world fraud methods from 2024 to 2026 and how each is handled: **[docs/THREATS_2024_2026.md](docs/THREATS_2024_2026.md)**.
 
@@ -69,7 +79,7 @@ Real-world fraud methods from 2024 to 2026 and how each is handled: **[docs/THRE
 | # | Deliverable | Where |
 |---|---|---|
 | D1 | Multi-source correlation | `backend/app/modules/registry`, `modules/correlation` (specificity-weighted graph, Louvain, family exception), 3-way QR↔OCR↔form in `modules/document/agent.py` |
-| D2 | AI-generated document forgery | Ed25519 signed QR (`qr_sign.py`), Verhoeff/PAN checks, date gate, OCR, cheap forensics (`forensics.py`); TruFor evidence on demand (`trufor.py`) |
+| D2 | AI-generated document forgery | Ed25519 signed QR (`qr_sign.py`; optional AES-256-GCM encrypted variant `TID3` so a scan reveals nothing), Verhoeff/PAN checks, date gate, OCR, cheap forensics (`forensics.py`); TruFor evidence on demand (`trufor.py`) |
 | D3 | Behaviour across applications | `modules/behavior` + `correlation/history.py` (velocity windows, sequential emails, keystroke-rhythm links, IsolationForest) |
 | D4 | Biometrics | `modules/biometric` (InsightFace ArcFace, threshold at FAR 0.1%, face reuse, server-issued and server-verified head-turn challenge in `liveness_sessions.py`, virtual-camera hint, media reuse), `frontend/lib/liveness.ts` (MediaPipe guidance only) |
 | D5 | Adversarial robustness | `eval/run_attacks.py`, `eval/adaptive_attacker.py`, live attack endpoint `/api/attack/live`, Attack Lab page |

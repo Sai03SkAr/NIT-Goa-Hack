@@ -1,11 +1,12 @@
 /** Colors for canvas/SVG code (charts, identity graph) that can't read CSS variables. Mirrors app/globals.css. */
-export const INK = "#15181d";
-export const MUTED = "#677080";
-export const GRID = "#e6e9ee";
-export const BRAND = "#2445a8";
-export const APPROVE = "#17733f";
-export const REVIEW = "#9a5800";
-export const REJECT = "#b42318";
+export const INK = "#14161a";
+export const MUTED = "#6e7380";
+export const GRID = "#ebece7";
+export const BRAND = "#2b3be6";
+export const BRAND_2 = "#a9b1ff";  // secondary series next to BRAND
+export const APPROVE = "#0f7b52";
+export const REVIEW = "#b4690e";
+export const REJECT = "#c8361f";
 
 /** Categorical colors for fraud patterns, distinct from the decision colors and readable on white. */
 export const TYPE_COLORS: Record<string, string> = {
@@ -21,6 +22,6 @@ export const LINK_COLORS: Record<string, string> = {
 
 export const AXIS = { stroke: MUTED, fontSize: 11, tickLine: false } as const;
 export const TOOLTIP = {
-  contentStyle: { background: "#fdfdfe", border: "1px solid #cfd5dd", borderRadius: 8, fontSize: 12, color: INK, boxShadow: "0 2px 8px rgba(21,24,29,.08)" },
+  contentStyle: { background: "#ffffff", border: "1px solid #e3e4df", borderRadius: 10, fontSize: 12, color: INK, boxShadow: "0 2px 8px rgba(21,24,29,.08)" },
   labelStyle: { color: INK, fontWeight: 500 },
 } as const;

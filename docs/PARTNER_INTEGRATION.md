@@ -146,6 +146,7 @@ dashboard (http://localhost:3000).
 | 9 | Income mismatch | Declare ₹90,000 but upload the ₹68,400 slip | Slip net pay and salary-credit checks fail | Flagged |
 | 10 | Same ID, two names | Apply twice with Riya's Aadhaar under different names and mobiles | - | Second case: registry mismatch and shared-ID link; never approved (**REVIEW** or **REJECT**, depending on the model's score) |
 | 11 | Repeat device | Several applications from one browser in a day | - | Velocity / possible mule pattern, **REVIEW** |
+| 12 | Identity reused across banks | `python scripts/consortium_client.py report --partner-key tw_test_9c2e61b07d4a --id 234567890124 --name "Suresh Fraudster" --outcome REJECT --ref DEMO-1` (Tideway reports a rejected case, tokens only), then apply as Riya at Kestrel | - | Network alerts "used under a different name at another institution" and "rejected elsewhere"; held for **REVIEW**, never approved. Remove the demo signal afterwards (section 10) |
 
 For each case, open it in the ops console and check three things:
 - **TrueID's checklist:** card signature, face matches, liveness, registries, capture quality and so on.
@@ -163,9 +164,12 @@ All calls are server to server with `X-Partner-Key`. Interactive docs are at htt
 | `GET  /api/partner/v1/registry/pan-link?pan=&id_number=` | `{pan_found, linked}` |
 | `POST /api/partner/v1/liveness/challenge` | `{challenge_id, sequence[turn_left/turn_right], expires_in}` |
 | `POST /api/partner/v1/documents/check` | multipart `kind`, `claims` (JSON), `owner`, `file` -> `{checks[{check,label,status,detail}]}` |
-| `POST /api/partner/v1/applications` | multipart `payload` (JSON: form, device, telemetry, `challenge_id`, capture, partner_checks), `card`, `selfie`, `frames` (neutral + one per step) -> `{application_id}` |
+| `POST /api/partner/v1/applications` | multipart `payload` (JSON: form, device, telemetry, `challenge_id`, capture, partner_checks), `card`, `selfie`, `frames` (a burst of 6-40 frames covering the whole head-turn challenge); optional `device.geo` `{lat, lon, acc}` -> `{application_id}` |
 | `GET  /api/partner/v1/applications/{id}` | Verdict: decision, risk, fraud pattern, reasons, evidence checklist |
 | `GET  /api/partner/v1/applications` / `analytics?days=` | Ops list and dashboard numbers for this partner only |
+| `POST /api/partner/v1/consortium/check` | `{tokens{id_number,pan,phone,email,device,account}, name_token}` (40-hex HMACs) -> `{status, alerts[{code,kind,institutions}], seen_elsewhere}` |
+| `POST /api/partner/v1/consortium/report` | Same tokens + `outcome` (APPROVE/REVIEW/REJECT) + `ref` |
+| `GET  /api/partner/v1/consortium/stats` | Network size: members, signals |
 
 **Status meanings.**
 - **PASS** and **FAIL** mean the check ran.
@@ -174,8 +178,22 @@ All calls are server to server with `X-Partner-Key`. Interactive docs are at htt
 
 Only PASS counts towards automatic approval.
 
-**Liveness.** Frames must answer a challenge TrueID issued: one-time, partner-bound, 15 minutes. Without a
-`challenge_id`, liveness is NOT_PROVIDED, so the case can never be approved automatically.
+**Cross-institution network.** Applications sent to `/applications` are checked against other institutions and
+then recorded automatically: only keyed hashes of the identifiers and name are stored. A bank that runs its own KYC
+joins by hashing locally with the consortium key (`scripts/consortium_client.py`, standard library only) and calling
+`consortium/check` and `consortium/report`. Raw identifiers are refused. Answers are counts only. A conflict appears as
+the `network` module's reasons and holds the case for review (`EV_NETWORK_FAIL`); it never approves or rejects alone.
+The key lives in `backend/.secrets/consortium_key` (or `TRUEID_CONSORTIUM_KEY`) and must be the same for every member.
+
+**Liveness.** Frames must answer a challenge TrueID issued: one-time, partner-bound, 15 minutes. They must be a
+continuous burst: at least 6 frames, starting with a neutral pose and sweeping through middle angles to each
+requested turn, in order. A few still photos fail with `BIO_NO_MOTION`. Kestrel records about 4 frames a second for
+the whole challenge. Without a `challenge_id`, liveness is NOT_PROVIDED, so the case can never be approved
+automatically.
+
+**Geo-tag (RBI V-CIP).** Send the browser's location as `device.geo`. TrueID records it and the network as
+informational evidence; it never blocks a case. ID cards may carry a signed QR (`TID2`) or a signed and encrypted
+QR (`TID3`); both are verified the same way.
 
 ## 9. Configuration reference
 
@@ -185,8 +203,9 @@ Only PASS counts towards automatic approval.
 | Site mode | `TRUEID_MODE` = `auto`, `remote` or `local` (demo) | `auto` |
 | TrueID address | `TRUEID_API_URL` | `http://127.0.0.1:8000` |
 | Partner challenge lifetime | `TRUEID_PARTNER_CHALLENGE_TTL_S` | 900 s |
-| Frames / upload size | `TRUEID_MAX_FRAMES`, `TRUEID_MAX_UPLOAD_BYTES` | 3 frames, 8 MB per image |
+| Frames / upload size | `TRUEID_MAX_FRAMES`, `TRUEID_MAX_UPLOAD_BYTES` | 40 frames, 8 MB per image |
 | Ops passcode | `OPS_PASSCODE` in the site's `.env.local` | `kestrel-ops` |
+| Consortium key | `TRUEID_CONSORTIUM_KEY`, shared by all members | random, in `backend/.secrets/consortium_key` |
 
 Adding another partner:
 1. Add an entry to `PARTNERS` in `backend/app/partners.py`.
@@ -205,6 +224,8 @@ Adding another partner:
 | ID-card signature fails on a teammate's machine | Cards were signed with another machine's issuer key | Run step 4 on that machine |
 | 401 from TrueID | Wrong or missing partner key | Match `.env.local` with `partners.py` / `TRUEID_PARTNER_KEYS` |
 | Site shows "Demo mode" | `TRUEID_MODE=local`, or TrueID unreachable in `auto` | Set `remote`, check `TRUEID_API_URL` |
+| A genuine test applicant is held with a network alert | A demo consortium signal is still stored | Delete it: `cd backend` then `<venv python> -c "from app import db; from app.consortium import ConsortiumSignal; from sqlmodel import delete; db.init(); s=db.session(); s.exec(delete(ConsortiumSignal)); s.commit()"` |
+| Consortium never matches another member | Members hash with different keys | Every member must use the same consortium key |
 
 ## 11. Known limits
 
@@ -212,5 +233,7 @@ Adding another partner:
 - Penny drop is simulated.
 - Re-use detection catches the same file and digitally re-saved copies, not a re-photographed print.
 - Metadata markers are strong evidence when present; their absence proves nothing.
+- Consortium members share one HMAC key, so a member could brute-force low-entropy identifiers (a phone number)
+  offline. Production should use an oblivious PRF or private set intersection.
 - A real-time face swap that follows the head-turn instructions can pass a web liveness check (see
   `docs/THREATS_2024_2026.md`).

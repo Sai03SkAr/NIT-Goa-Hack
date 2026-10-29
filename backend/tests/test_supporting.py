@@ -124,3 +124,25 @@ def test_same_template_different_person_is_not_reuse(client):
 
     assert _status(_check(client, "electricity_bill", {}, "Meera Desai", bill("MEERA DESAI")).json(), "reuse") == "PASS"
     assert _status(_check(client, "electricity_bill", {}, "Karthik Prabhu", bill("KARTHIK PRABHU")).json(), "reuse") == "PASS"
+
+
+def test_an_older_database_gains_new_columns_on_startup(tmp_path):
+    """A DB created before a column existed must keep working after a pull (additive migration in db.init)."""
+    import sqlite3
+    from sqlalchemy import create_engine, inspect
+    from app import db
+    p = tmp_path / "old.db"
+    con = sqlite3.connect(p)
+    con.execute("CREATE TABLE application (app_id VARCHAR PRIMARY KEY, ts VARCHAR, name VARCHAR)")
+    con.execute("INSERT INTO application VALUES ('OLD1', '2026-01-01T00:00:00', 'Old Row')")
+    con.commit(); con.close()
+    old = db.engine
+    db.engine = create_engine(f"sqlite:///{p}")
+    try:
+        db.init()
+        assert "context" in {c["name"] for c in inspect(db.engine).get_columns("application")}
+        with db.Session(db.engine) as s:
+            r = s.get(db.Application, "OLD1")
+            assert r.context == {} and r.evidence == [] and r.status == "open"
+    finally:
+        db.engine = old

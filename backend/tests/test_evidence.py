@@ -101,3 +101,36 @@ def test_llm_guardrail_checks_every_code_not_just_single_brackets():
     assert cites_only("The card was edited [DOC_QR_OCR_MISMATCH].", {"DOC_QR_OCR_MISMATCH"})
     assert not cites_only("Edited [DOC_QR_OCR_MISMATCH, BIO_MADE_UP]", {"DOC_QR_OCR_MISMATCH"})  # multi-code bracket
     assert not cites_only("Looks fine to me.", {"DOC_QR_OCR_MISMATCH"})  # must cite something
+
+
+def test_encrypted_qr_roundtrip_and_tamper():
+    import base64
+    from app.modules.document import qr_sign as Q
+    fields = {"n": "ASHA NAIK", "d": "01/01/1990", "g": "F", "id": "234567890123", "i": "05/06/2012"}
+    text = Q.make_qr_text(fields, encrypt=True)
+    assert text.startswith("TID3|") and "ASHA" not in text and "234567890123" not in text
+    payload, st = Q.parse_and_verify(text)
+    assert st == Q.VALID and payload["id"] == "234567890123"
+    raw = bytearray(base64.urlsafe_b64decode(text[5:])); raw[20] ^= 1
+    assert Q.parse_and_verify("TID3|" + base64.urlsafe_b64encode(bytes(raw)).decode())[1] == Q.INVALID_SIG
+
+
+def test_motion_live_sweep_passes_photos_fail():
+    import numpy as np
+    from app.modules.biometric.agent import _motion
+    # a live turn sweeps smoothly: neutral -> left extreme -> back -> right extreme
+    left = list(np.linspace(0, 0.25, 8)) + list(np.linspace(0.25, 0, 5))
+    right = list(np.linspace(0, -0.25, 8)) + list(np.linspace(-0.25, 0, 5))
+    ok, codes, _ = _motion([0, 0, *left, *right], ["turn_left", "turn_right"])
+    assert ok and not codes
+    # two still photos: neutral frames then jump straight to the turned frame, nothing in between
+    ok, codes, _ = _motion([0.0] * 6 + [0.25] * 6, ["turn_left"])
+    assert not ok and "BIO_NO_MOTION" in codes
+    # copies of a single still: no movement at all
+    ok, codes, _ = _motion([0.1] * 10, ["turn_left"])
+    assert not ok and "BIO_LIVENESS_FAIL" in codes
+    # right turn performed when left was asked, or wrong order
+    ok, codes, _ = _motion(list(np.linspace(0, -0.25, 10)), ["turn_left"])
+    assert not ok and "BIO_LIVENESS_FAIL" in codes
+    ok, _, _ = _motion([*np.linspace(0, -0.25, 7), *np.linspace(-0.25, 0.25, 10)], ["turn_left", "turn_right"])
+    assert not ok  # did right then left, but left-then-right was requested

@@ -76,6 +76,11 @@ def main():
     s, j = call(f"{api}/api/partner/v1/registry/pan-link?pan={RIYA['pan']}&id_number={RIYA['id_number']}", key)
     check("PAN-Aadhaar link check", s == 200 and j.get("linked") is True, f"{s} {j}", "Same fix as the line above.")
 
+    s, j = call(f"{api}/api/partner/v1/consortium/stats", key)
+    check("Cross-institution network answers", s == 200 and isinstance(j, dict) and "members" in j,
+          f"{j.get('members')} members, {j.get('signals')} hashed signals" if s == 200 else f"{s} {j}",
+          "Restart TrueID with the current code (backend/app/consortium.py).")
+
     s, j = call(f"{api}/api/partner/v1/liveness/challenge", key, method="POST")
     check("Liveness challenges are issued", s == 200 and bool((j or {}).get("challenge_id")),
           f"sequence {j.get('sequence')}, valid {j.get('expires_in')} s" if s == 200 else f"{s} {j}")

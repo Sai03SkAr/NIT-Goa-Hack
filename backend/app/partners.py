@@ -9,6 +9,9 @@
     GET  /api/partner/v1/registry/pan-link     is this PAN linked to this Aadhaar (Income Tax link status)
     POST /api/partner/v1/documents/check       check one document as it is uploaded (ID card or supporting document)
     GET  /api/partner/v1/analytics             this partner's operations analytics
+    POST /api/partner/v1/consortium/check      cross-institution check with locally hashed identifiers (no PII)
+    POST /api/partner/v1/consortium/report     share an outcome for locally hashed identifiers
+    GET  /api/partner/v1/consortium/stats      network size (members, signals)
 
 Every call carries `X-Partner-Key` (checked in security.py, deny by default). Keys live server-side only: the partner's
 own backend calls us, a browser never sees the key. Local-demo keys are below; override with
@@ -22,16 +25,18 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
+from pydantic import Field as PField
 from sqlalchemy import JSON, Column
 from sqlmodel import Field, SQLModel, select
 
-from app import db, liveness_sessions
+from app import consortium, db, learning, liveness_sessions
 from app.modules.document import supporting  # noqa: F401  registers the DocPrint table before db.init()
 from app.config import MAX_PAYLOAD_BYTES, PARTNER_CHALLENGE_TTL_S
 from app.schemas import code_text
@@ -94,6 +99,16 @@ def challenge(x_partner_key: str | None = Header(default=None)):
     return liveness_sessions.issue(_session(_partner(x_partner_key)), PARTNER_CHALLENGE_TTL_S)
 
 
+def _geo(M, data: dict) -> dict | None:
+    """RBI V-CIP geo-tag, same shape as /api/apply ({lat, lng, accuracy, ts}). Accepts it at the top level, or as
+    device.geo {lat, lon|lng, acc|accuracy} as the partner sites send it. Informational in the policy, never gating."""
+    g = data.get("geo") or (data.get("device") or {}).get("geo")
+    if not g:
+        return None
+    g = {"lat": g.get("lat"), "lng": g.get("lng", g.get("lon")), "accuracy": g.get("accuracy", g.get("acc")), "ts": g.get("ts")}
+    return M.Geo.model_validate(g).model_dump()
+
+
 @router.post("/applications")
 async def create(request: Request, payload: str = Form(..., max_length=MAX_PAYLOAD_BYTES), card: UploadFile = File(...),
                  selfie: UploadFile = File(...), frames: list[UploadFile] = File(default=[]),
@@ -105,6 +120,7 @@ async def create(request: Request, payload: str = Form(..., max_length=MAX_PAYLO
         form = M.FormIn.model_validate(data.get("form") or {})
         device = M.DeviceIn.model_validate(data.get("device") or {})
         tele = M.TelemetryIn.model_validate(data.get("telemetry") or {})
+        geo = _geo(M, data)
     except json.JSONDecodeError:
         raise HTTPException(422, "payload must be JSON")
     except ValidationError as e:
@@ -132,7 +148,7 @@ async def create(request: Request, payload: str = Form(..., max_length=MAX_PAYLO
     a = {"app_id": app_id, "ts": now, "source": f"partner:{pid}",
          "form": form.model_dump(), "device": device.model_dump() | {"ip": claimed_ip},
          "telemetry": {k: v for k, v in tele.model_dump().items() if v is not None},
-         "challenge": challenge, "consent": {"accepted": True, "by": f"partner:{pid}", "ts": now},
+         "challenge": challenge, "consent": {"accepted": True, "by": f"partner:{pid}", "ts": now}, "geo": geo,
          "card_sha256": hashlib.sha256(card_raw).hexdigest(), "selfie_sha256": hashlib.sha256(selfie_raw).hexdigest(),
          "card_path": f"/uploads/{app_id}_card.jpg", "selfie_path": f"/uploads/{app_id}_selfie.jpg",
          "partner": {"id": pid, "reference": str(data.get("reference", ""))[:64]}}
@@ -178,6 +194,8 @@ def _verdict(pa: PartnerApplication, app: db.Application | None) -> dict:
         "evidence": [{k: e.get(k) for k in ("check", "label", "status", "required", "source")} for e in app.evidence or []],
         "model_status": app.model_status, "policy_version": app.policy_version,
         "analyst_status": app.status,
+        # safe to show the applicant: fixable issues only, never fraud signals (see app/learning.py)
+        "applicant_coaching": learning.tips_for(app),
     }
 
 
@@ -267,6 +285,43 @@ def analytics(days: int = 14, x_partner_key: str | None = Header(default=None)):
                                                        PartnerApplication.created >= since)).all()
         pairs = [(r, s.get(db.Application, r.app_id)) for r in rows]
         return {"partner": PARTNERS[pid]["name"]} | analytics_of(pairs, days)
+
+
+# ------------------------------------------------------------------ cross-institution fraud network (app/consortium.py)
+# For members that run their own KYC: they hash identifiers locally with the consortium key (scripts/consortium_client.py)
+# and send only tokens. Applications sent through /applications are checked and recorded automatically.
+_TOKEN = re.compile(r"^[0-9a-f]{40}$")
+
+
+class NetTokens(BaseModel):
+    tokens: dict[str, str] = PField(default_factory=dict)
+    name_token: str = PField(default="", max_length=40)
+    outcome: str = PField(default="", pattern=r"^(|APPROVE|REVIEW|REJECT)$")
+    ref: str = PField(default="", max_length=64)
+
+    def clean(self) -> dict:
+        bad = [k for k, v in self.tokens.items() if k not in consortium.KINDS or not _TOKEN.match(v)]
+        if bad or (self.name_token and not _TOKEN.match(self.name_token)):
+            raise HTTPException(422, f"tokens must be 40-hex HMACs for kinds {', '.join(consortium.KINDS)}; bad: {bad}")
+        return self.tokens
+
+
+@router.post("/consortium/check")
+def consortium_check(body: NetTokens, x_partner_key: str | None = Header(default=None)):
+    """Counts only: never which institution matched, nor anything it submitted."""
+    return consortium.check(_partner(x_partner_key), body.clean(), body.name_token)
+
+
+@router.post("/consortium/report")
+def consortium_report(body: NetTokens, x_partner_key: str | None = Header(default=None)):
+    consortium.record(_partner(x_partner_key), body.clean(), body.name_token, outcome=body.outcome, ref=body.ref)
+    return {"recorded": True}
+
+
+@router.get("/consortium/stats")
+def consortium_stats(x_partner_key: str | None = Header(default=None)):
+    _partner(x_partner_key)
+    return consortium.stats()
 
 
 # ------------------------------------------------------------------ simulated government sources for partners

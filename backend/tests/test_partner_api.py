@@ -51,7 +51,7 @@ def client(monkeypatch):
 
 def _submit(c, key, payload, frames=0):
     files = [("card", ("c.jpg", io.BytesIO(_jpg()), "image/jpeg")), ("selfie", ("s.jpg", io.BytesIO(_jpg()), "image/jpeg"))]
-    files += [("frames", (f"f{i}.jpg", io.BytesIO(_jpg(100 + 40 * i)), "image/jpeg")) for i in range(frames)]
+    files += [("frames", (f"f{i}.jpg", io.BytesIO(_jpg((100 + 40 * i) % 256)), "image/jpeg")) for i in range(frames)]
     return c.post("/api/partner/v1/applications", data={"payload": json.dumps(payload)}, files=files,
                   headers={"X-Partner-Key": key} if key else {})
 
@@ -65,7 +65,9 @@ def test_rejects_missing_or_wrong_key(client):
 def test_validates_form_like_apply(client):
     r = _submit(client, PL, {"form": {**FORM, "email": ""}})
     assert r.status_code == 422 and any(x["field"] == "email" for x in r.json()["detail"])
-    assert _submit(client, PL, {"form": FORM}, frames=4).status_code == 422  # neutral + two turns at most
+    assert _submit(client, PL, {"form": FORM}, frames=main.MAX_FRAMES + 1).status_code == 422  # burst limit
+    bad_geo = {"form": FORM, "device": {"geo": {"lat": 123.0, "lon": 73.8}}}
+    assert _submit(client, PL, bad_geo).status_code == 422  # same Geo validation as /api/apply
 
 
 def test_upload_partner_reaches_pipeline_without_challenge(client):
@@ -82,6 +84,16 @@ def test_upload_partner_reaches_pipeline_without_challenge(client):
     assert v["reasons"][0]["text"].startswith("No server-verified liveness")
     assert v["evidence"][0]["status"] == "NOT_PROVIDED"
     assert v["applicant"]["id_number"].startswith("XXXX")  # masked for the partner console
+    from app.learning import FIXABLE_STATUS
+    tips = v["applicant_coaching"]["tips"]  # what the partner may show its customer: fixable issues only
+    assert "liveness" in [t["check"] for t in tips] and all(t["check"] in FIXABLE_STATUS for t in tips)
+
+
+def test_geo_tag_reaches_the_pipeline(client):
+    aid = _submit(client, TW, {"form": FORM, "device": {"geo": {"lat": 15.49, "lon": 73.82, "acc": 25}}}).json()["application_id"]
+    assert client.seen[aid]["app"]["geo"] == {"lat": 15.49, "lng": 73.82, "accuracy": 25.0, "ts": None}
+    plain = _submit(client, TW, {"form": FORM}).json()["application_id"]
+    assert client.seen[plain]["app"]["geo"] is None  # declined location: recorded as not provided, never blocks
 
 
 def test_partner_challenge_is_server_issued_once_and_partner_bound(client):

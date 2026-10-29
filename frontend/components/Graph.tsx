@@ -50,7 +50,7 @@ export function IdentityGraph({ nodes, links, focus, height = 420, colorBy = "ba
           ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, 2 * Math.PI); ctx.fillStyle = c; ctx.fill();
           ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = "#fdfdfe"; ctx.stroke();
           if (scale > 1.6 || n.id === focus) {
-            ctx.font = `${10 / scale}px ui-sans-serif`; ctx.fillStyle = INK; ctx.textAlign = "center";
+            ctx.font = `${10 / scale}px ${getComputedStyle(document.body).fontFamily}`; ctx.fillStyle = INK; ctx.textAlign = "center";
             ctx.fillText(n.name ?? n.id, n.x, n.y + r + 9 / scale);
           }
         }}

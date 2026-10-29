@@ -25,8 +25,18 @@ much more than common ones. A clustering algorithm (**Louvain**) spots dense clu
 biometric 0.98 (ROC-AUC). **Combined: 0.998.** Fraud recall goes from 0.52 (document alone) to 1.00 fused. That jump
 is the evidence that correlation, not any one check, does the work.
 
+**Across institutions (new):** a privacy-preserving **consortium network** (`backend/app/consortium.py`). Each
+institution's identifiers (ID number, PAN, phone, email, device, account, name) leave it only as keyed hashes
+(HMAC-SHA256), so no bank sees another's customers. TrueID alerts when the **same ID number or PAN appears under a
+different name at another institution**, when an identifier was **rejected for fraud elsewhere**, or when **one device
+onboards several people across institutions** in a week. Answers are counts only (never which bank or which name), and
+an alert can only hold a case for review, never approve or reject it alone. It's the same idea as RBI's DPIP and the
+I4C-RBIH mule-intelligence sharing, applied at onboarding. Banks outside TrueID join with the reference client
+(`scripts/consortium_client.py`). Limit, stated: members share the HMAC key, so production should use an oblivious PRF /
+private set intersection.
+
 **Ours vs everyone's:** per-applicant PAN/registry checks are commodity. The **graph that catches rings at
-onboarding** is the differentiator.
+onboarding**, extended **across institutions without sharing PII**, is the differentiator.
 
 ## 2. AI-generated document forgery detection
 **What it asks:** catch forged or AI-made ID documents.
@@ -35,6 +45,10 @@ onboarding** is the differentiator.
 not from "does the pixel look fake." A generated or edited card can't produce a valid signature, and any edit
 disagrees with its own signed QR. On top: Verhoeff checksum, PAN format, impossible-date checks, pixel forensics, the
 **TruFor** forgery model (as evidence only), and metadata markers that reveal AI generators or photo-editing software.
+Cards can also carry a **signed and encrypted QR** (AES-256-GCM over the signed text), so a stranger who scans the card
+learns nothing. Documents nobody signs (electricity bill, salary slip, bank statement, cheque) are checked as they are
+uploaded: AI/editing metadata, the same image already used by **another applicant**, legibility, and OCR that the values
+the applicant typed are actually printed on the page.
 
 **Proof / the striking finding:** on edited date-of-birth cards, TruFor (a top research forgery detector) performs at
 chance (~0.49) and even flags clean cards, while our **signed-QR-vs-print check catches ~95%.** Lesson for the mentor:
@@ -61,8 +75,9 @@ are still caught because the face/keystroke links connect them.
 
 **What we have:** **face is real** (InsightFace / ArcFace) and matched three ways — selfie vs card photo vs the
 **issuer's registry photo** — at a strict threshold (0.1% false-accept). A 1:N search catches one face reused under
-different names. **Liveness is real and server-checked:** the server picks a random head-turn, the browser sends
-frames, the server confirms one live person did the turn; an uploaded photo counts as "not provided" and can't be
+different names. **Liveness is real and server-checked:** the server picks a random head-turn order, the browser sends
+a continuous **burst of frames**, and the server confirms one live person swept smoothly through each requested turn in
+order (a few still photos fail with `BIO_NO_MOTION`); an uploaded photo counts as "not provided" and can't be
 auto-approved. Voice/fingerprint are **simulated and clearly badged — and never used in the decision** (we're honest
 about what's real).
 
@@ -106,7 +121,8 @@ Measured (time-split, 444 test apps, 85 fraud):
 
 **Be honest about this before the mentor is:** the data is synthetic, so a perfect recall (0 missed) is optimistic —
 the credible claim is the **relative gain** (fused 0.998 vs any single source ≤ 0.98) plus the adversarial results,
-measured on a proper time-based split with 95% confidence intervals and leakage checks.
+measured on a proper time-based split with 95% confidence intervals and leakage checks. (These offline numbers don't
+include the cross-institution network, which only adds review holds on live cases.)
 
 ---
 
@@ -117,7 +133,8 @@ measured on a proper time-based split with 95% confidence intervals and leakage 
 - **"Recall 1.0 — overfit?"** → Synthetic data makes absolutes optimistic; we lean on the ablation's relative gain and
   the adversarial / confidence-interval results, not the 1.0.
 - **"Why would a bank buy it?"** → It sits behind their existing KYC site, targets synthetic/mule fraud RBI is
-  actively cracking down on, runs on open models with no per-call cost, and gets stronger across partners.
+  actively cracking down on, runs on open models with no per-call cost, and gets stronger with every member: the consortium network catches an
+identity reused across banks without any bank sharing customer data.
 - **"Robustness?"** → No fraud approved under any attack; adaptive attacker 0/85; fused beats every single module.
 
 ## Where this lives in the code
@@ -127,5 +144,7 @@ measured on a proper time-based split with 95% confidence intervals and leakage 
 - Signed QR: `backend/app/modules/document/qr_sign.py` · supporting docs: `modules/document/supporting.py`
 - Pipeline: `backend/app/graph/pipeline.py` · partner API: `backend/app/partners.py`
 - Adversarial: `eval/run_attacks.py`, `eval/adaptive_attacker.py` · metrics: `eval/train.py` → `precomputed/metrics.json`
-- Alignment & threats: `docs/VCIP_ALIGNMENT.md` (if present on the branch), `docs/THREATS_2024_2026.md`,
-  `docs/PARTNER_INTEGRATION.md`
+- Cross-institution network: `backend/app/consortium.py`, member client `scripts/consortium_client.py`
+- Governed self-learning and applicant tips: `backend/app/learning.py` (`docs/LEARNING_LOOP.md`)
+- Analytics assistant (Ask TrueID / Investigator): `backend/app/llm/assistant.py` (`docs/ASSISTANT.md`)
+- Alignment & threats: `docs/VCIP_ALIGNMENT.md`, `docs/THREATS_2024_2026.md`, `docs/PARTNER_INTEGRATION.md`

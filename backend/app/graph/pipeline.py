@@ -12,7 +12,7 @@ from typing import Annotated, Any, TypedDict
 import numpy as np
 from langgraph.graph import END, START, StateGraph
 
-from app import db, policy
+from app import consortium, db, policy
 from app.config import LIVE_HISTORY
 from app.fusion import fraud_type, model
 from app.llm.summary import summarize
@@ -104,11 +104,29 @@ def correlation_node(s: State):
     return {"modules": {"correlation": r.model_dump()}, "rec": {"app_id": rec["app_id"]}}
 
 
+def network_module(app: dict) -> dict:
+    """Cross-institution check (app/consortium.py): hashed identifiers matched against OTHER institutions."""
+    from app.schemas import ModuleResult, reason
+    t0 = datetime.now()
+    try:
+        toks, name_tok = consortium.tokens_for(app)
+        r = consortium.check(consortium.institution_of(app), toks, name_tok)
+    except Exception:  # noqa: BLE001  the network being down never blocks or passes a case
+        r = {"status": policy.UNAVAILABLE, "alerts": [], "seen_elsewhere": {}}
+    reasons = [reason(a["code"], 0.3) for a in {a["code"]: a for a in r["alerts"]}.values()]
+    return ModuleResult(module="network", risk=round(min(1.0, 0.45 * len(reasons)), 3), reasons=reasons,
+                        features={"ev_network": policy.CODE[r["status"]]},
+                        latency_ms=int((datetime.now() - t0).total_seconds() * 1000),
+                        evidence={"alerts": r["alerts"], "seen_at_other_institutions": r["seen_elsewhere"]}).model_dump()
+
+
 def fusion_node(s: State):
     feats = {}
     for m in s["modules"].values():
         feats.update(m["features"])
-    return {"feats": feats, "decision": model.decide(feats, Runtime.bands)}
+    net = network_module(s["app"])
+    feats.update(net["features"])
+    return {"feats": feats, "decision": model.decide(feats, Runtime.bands), "modules": {"network": net}}
 
 
 def route(s: State):
@@ -148,12 +166,15 @@ def persist_node(s: State):
                              "emb": None if emb is None else [float(x) for x in emb],
                              "media": s["modules"]["biometric"].get("_media")}) + "\n")
     with db.session() as ses:
+        ctx = {"geo": a.get("geo"), "ip": a.get("device", {}).get("ip"), "consent": a.get("consent"),
+               "ts": a.get("ts")}
+        feats_ev = {**s["feats"], **policy.context_codes(a)}
         ses.merge(db.Application(
             app_id=a["app_id"], ts=a["ts"], source=a.get("source", "live"),
             name=a["form"]["name"], id_last4=a["form"]["id_number"][-4:], form_masked=db.mask_form(a["form"]),
             prob=d["prob"], band=d["band"], forced=d.get("forced"), rule_codes=d.get("rule_codes", []),
-            evidence=policy.evidence_list(s["feats"]), model_status=d.get("model_status", ""),
-            policy_version=d.get("policy_version", ""), step_up=s.get("step_up") or {},
+            evidence=policy.evidence_list(feats_ev), model_status=d.get("model_status", ""),
+            policy_version=d.get("policy_version", ""), step_up=s.get("step_up") or {}, context=ctx,
             fraud_type=d["fraud_type"], fraud_label=d["fraud_label"], action=d["fraud_action"],
             modules=_public_modules(s), shap=d.get("shap", []), summary=s.get("summary", ""),
             stepped_up=bool(s.get("stepped_up")), card_path=a.get("card_path", ""), selfie_path=a.get("selfie_path", ""),
@@ -161,6 +182,11 @@ def persist_node(s: State):
         p = "model unavailable" if d["prob"] is None else f"p={d['prob']:.3f}"
         db.audit(ses, a["app_id"], f"decision:{d['band']}", f"{p} type={d['fraud_type']} {d['policy_version']}")
         ses.commit()
+    try:  # share this case's hashed identifiers and outcome with the consortium (no PII leaves in the store)
+        toks, name_tok = consortium.tokens_for(a)
+        consortium.record(consortium.institution_of(a), toks, name_tok, outcome=d["band"], ref=a["app_id"])
+    except Exception:  # noqa: BLE001
+        pass
     return {"persisted": True}
 
 

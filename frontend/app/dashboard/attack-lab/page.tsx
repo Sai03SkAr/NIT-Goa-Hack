@@ -5,7 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContai
 import { Crosshair, Play, ShieldCheck, Swords } from "lucide-react";
 import { Section, Stat, pct, Finding } from "@/components/ui";
 import { type AppRow, fileUrl, get, post } from "@/lib/api";
-import { AXIS, BRAND, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
+import { AXIS, BRAND, BRAND_2, GRID, MUTED, REJECT, REVIEW, TOOLTIP } from "@/lib/theme";
 
 
 export default function AttackLab() {
@@ -22,19 +22,19 @@ export default function AttackLab() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Attack Lab</h1>
+        <h1 className="display text-[32px] leading-[1.1]">Attack Lab</h1>
         <p className="mt-1 max-w-4xl text-sm text-muted">We attack our own system. Each attack perturbs real test cases, re-runs the real document and biometric extraction, and re-scores with the trained fusion. Sample: {d.n_sample} test applications ({d.n_fraud} fraud).</p>
         {d.evaluation_kind && <p className="mt-1 max-w-4xl text-xs text-dim">Evaluation kind: {d.evaluation_kind}.</p>}
       </div>
       {adaptive && (
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Stat label="Adaptive attacker, recall before" value={pct(adaptive.recall_before)} />
           <Stat label="Recall after greedy evasion" value={pct(adaptive.recall_after)} accent="var(--brand)" hint="attacker changes only what they control" />
           <Stat label="Controllable features" value={adaptive.controllable.length} hint="typing, email, device, IP, timing, links" />
           <Stat label="Can't be faked" value="face, history, crypto" accent="var(--approve)" hint="registry, SIM age, QR signature" />
         </div>
       )}
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
         <div className="panel h-fit p-2">
           {attacks.map((a) => (
             <button key={a.id} onClick={() => setSel(a.id)} className={clsx("w-full rounded-lg px-3 py-2.5 text-left transition", sel === a.id ? "bg-brand-soft" : "hover:bg-bg-2")}>
@@ -44,7 +44,7 @@ export default function AttackLab() {
           ))}
         </div>
         <div className="space-y-6">
-          <Section title={cur.name} right={<span className="chip text-approve"><ShieldCheck className="size-3" />{cur.defense}</span>}>
+          <Section title={cur.name} right={<span className="chip whitespace-normal text-approve"><ShieldCheck className="size-3" />{cur.defense}</span>}>
             {cur.kind === "sweep" && <Sweep a={cur} />}
             {cur.kind === "single" && <SingleTable a={cur} />}
             {cur.kind === "adaptive" && <Adaptive a={cur} />}
@@ -67,7 +67,7 @@ function Sweep({ a }: { a: any }) {
           <Tooltip {...TOOLTIP} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           <Line dataKey="fused_recall" name="Fused recall" stroke={BRAND} strokeWidth={2.5} dot />
-          <Line dataKey="fused_auc" name="Fused ROC-AUC" stroke="#8fa2d8" strokeWidth={2} dot />
+          <Line dataKey="fused_auc" name="Fused ROC-AUC" stroke={BRAND_2} strokeWidth={2} dot />
           <Line dataKey="doc_only_auc" name="Document module alone, AUC" stroke={REVIEW} strokeDasharray="5 4" dot />
           <Line dataKey="pixel_only_auc" name="Pixel forensics alone, AUC" stroke={REJECT} strokeDasharray="3 3" dot />
           <Line dataKey="fused_fpr" name="Genuine flagged (review or reject)" stroke={MUTED} strokeWidth={1.5} dot />
@@ -123,11 +123,14 @@ function LiveAttack() {
   const [lv, setLv] = useState(0);
   const [res, setRes] = useState<any>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { get<AppRow[]>("/api/apps?band=APPROVE&source=seed&limit=40").then((r) => { setApps(r); setAppId(r[0]?.app_id ?? ""); }); }, []);
+  const [err, setErr] = useState("");
+  useEffect(() => { get<AppRow[]>("/api/apps?band=APPROVE&source=seed&limit=40").then((r) => { setApps(r); setAppId(r[0]?.app_id ?? ""); }).catch(() => setApps([])); }, []);
   const levels = useMemo(() => atk.levels, [atk]);
   async function run() {
-    setBusy(true); setRes(null);
-    try { setRes(await post("/api/attack/live", { app_id: appId, attack: atk.id, level: levels[lv] ?? 0 })); } finally { setBusy(false); }
+    setBusy(true); setRes(null); setErr("");
+    try { setRes(await post("/api/attack/live", { app_id: appId, attack: atk.id, level: levels[lv] ?? 0 })); }
+    catch (e) { setErr(`The attack could not run: ${e instanceof Error ? e.message : e}. It needs the card images and models on the server.`); }
+    finally { setBusy(false); }
   }
   return (
     <Section title="Run one attack live" right={<span className="chip"><Crosshair className="size-3" />on a genuine, approved card</span>}>
@@ -142,22 +145,22 @@ function LiveAttack() {
           <input type="range" min={0} max={levels.length - 1} value={lv} onChange={(e) => setLv(+e.target.value)} /><span className="mono">{levels[lv]}</span></div>}
         <button className="btn btn-primary ml-auto" disabled={busy || !appId} onClick={run}><Play className="size-4" />{busy ? "Attacking…" : "Run attack"}</button>
       </div>
+      {err && <p className="mt-3 text-sm text-reject">{err}</p>}
+      {!apps.length && <p className="mt-3 text-sm text-dim">No approved seeded applications to attack yet. Seed the database first (scripts/build_all.sh).</p>}
       {res && (
-        <div className="fade-up mt-5 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-          <img src={res.image} alt="attacked card" className="rounded-lg border border-line" />
-          <div className="space-y-3">
-            {(["before", "after"] as const).map((k) => <AttackResult key={k} title={k === "before" ? "Clean card" : "Attacked card"} r={res[k]} />)}
-          </div>
+        <div className="fade-up mt-5 grid gap-5 lg:grid-cols-2">
+          {(["before", "after"] as const).map((k) => <AttackResult key={k} title={k === "before" ? "Clean card" : "Forged card"} r={res[k]} />)}
         </div>
       )}
     </Section>
   );
 }
 
-type Side = { risk: number; forensic: number; reasons: { code: string; text: string; weight: number }[]; ocr?: Record<string, string>;
+type Side = { image: string; risk: number; forensic: number; reasons: { code: string; text: string; weight: number }[]; ocr?: Record<string, string>;
   qr?: Record<string, string>; qr_valid?: boolean; trufor?: { score: number; heatmap: string } | null };
 
 function AttackResult({ title, r }: { title: string; r: Side }) {
+  const [view, setView] = useState<"card" | "trufor">("card");
   const found = r.reasons.filter((x) => x.weight > 0);
   const rows: [string, string | undefined, string | undefined][] = [
     ["Name", r.ocr?.name, r.qr?.n], ["Date of birth", r.ocr?.dob, r.qr?.d], ["ID number", r.ocr?.id_number, r.qr?.id],
@@ -171,6 +174,21 @@ function AttackResult({ title, r }: { title: string; r: Side }) {
           {found.length ? `${found.length} finding${found.length > 1 ? "s" : ""}` : "No findings"}
         </span>
       </div>
+      <div className="mt-3 overflow-hidden rounded-lg border border-line">
+        <img src={view === "trufor" && r.trufor ? fileUrl(r.trufor.heatmap) : r.image} alt={view === "trufor" ? `TruFor heatmap of the ${title.toLowerCase()}` : title}
+          className="block w-full" />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <div className="flex rounded-lg bg-bg-2 p-0.5 text-xs" role="tablist">
+          {([["card", "Card"], ["trufor", "TruFor heatmap"]] as const).map(([v, l]) => (
+            <button key={v} role="tab" aria-selected={view === v} disabled={v === "trufor" && !r.trufor} onClick={() => setView(v)}
+              className={clsx("whitespace-nowrap rounded-md px-2.5 py-1 disabled:opacity-40", view === v ? "bg-panel font-medium shadow-sm" : "text-muted hover:text-fg")}>{l}</button>
+          ))}
+        </div>
+        {r.trufor ? <span className="text-xs text-muted">TruFor score <span className="tabular-nums text-fg">{r.trufor.score.toFixed(2)}</span></span>
+          : <span className="text-xs text-dim">TruFor not installed</span>}
+      </div>
+      {view === "trufor" && r.trufor && <p className="mt-1.5 text-xs text-dim">Red marks pixels TruFor believes were manipulated. Shown as evidence only; it never changes the decision.</p>}
       <dl className="mt-3 grid grid-cols-3 gap-3 text-xs">
         {[["Document risk", r.risk.toFixed(2)], ["Pixel forensics", r.forensic.toFixed(2)], ["Issuer signature", r.qr_valid ? "Valid" : "Missing or invalid"]].map(([k, v]) => (
           <div key={k}><dt className="text-dim">{k}</dt><dd className="mt-0.5 text-sm tabular-nums text-fg">{v}</dd></div>
@@ -189,8 +207,6 @@ function AttackResult({ title, r }: { title: string; r: Side }) {
         </tbody>
       </table>
       {found.length > 0 && <ul className="mt-3 space-y-1.5 border-t border-line pt-3">{found.map((x) => <Finding key={x.code} text={x.text} code={x.code} weight={x.weight} />)}</ul>}
-      {r.trufor && <div className="mt-3 border-t border-line pt-2.5 text-xs text-muted">TruFor score <span className="tabular-nums text-fg">{r.trufor.score.toFixed(2)}</span>
-        {" · "}<a href={fileUrl(r.trufor.heatmap)} target="_blank" className="text-brand hover:underline">View heatmap</a></div>}
     </div>
   );
 }

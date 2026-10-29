@@ -5,12 +5,13 @@ import clsx from "clsx";
 import { ArrowRight, Bot, Check, Brain, CheckCircle2, CircleDashed, FileSearch, Fingerprint, GitMerge, Network, Scale, ScanFace, ShieldQuestion, Sparkles, Database } from "lucide-react";
 import { BandBadge, Finding, Logo, readable, RiskBar, SimBadge, riskColor } from "@/components/ui";
 import { ApiError, type CaseDetail, type EvidenceCheck, get } from "@/lib/api";
+import { ApplicantTips, type Coaching } from "@/components/Tips";
 import { applicantMessage } from "@/lib/applicantMessage";
 
 type Ev = { node: string; module?: string; risk?: number; reasons?: string[]; reason_texts?: Record<string, string>; rule_codes?: string[]; latency_ms?: number; prob?: number; band?: string;
   forced?: string | null; fraud_label?: string; fraud_action?: string; step_up?: { voice: number; simulated: boolean }; summary?: string; error?: string;
   unresolved?: string[]; model_status?: string; approval_eligible?: boolean };
-type Result = { done: boolean; band?: string; reasons?: string[]; evidence?: EvidenceCheck[]; error?: boolean };
+type Result = { done: boolean; band?: string; reasons?: string[]; evidence?: EvidenceCheck[]; error?: boolean; coaching?: Coaching };
 
 const NODES: { id: string; simple: string; label: string; icon: any; sub: string }[] = [
   { id: "ingest", simple: "Application received", label: "Ingest", icon: Database, sub: "consent · uploads · telemetry" },
@@ -52,6 +53,7 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
       restored.explain = { node: "explain", summary: c.summary };
       setEvs(restored); setOrder(["restored from saved case"]); setDone(true);
       setResult({ done: true, band: c.band, reasons: c.modules.flatMap((m) => m.reasons.filter((r) => r.weight > 0).map((r) => r.code)), evidence: c.evidence });
+      get<Coaching>(`/api/learning/tips/${id}`).then((t) => setResult((x) => x && { ...x, coaching: t })).catch(() => {});
     }).catch(() => setEvs((p) => ({ ...p, error: { node: "error", error: "This application could not be found in this browser session." } })));
     const tick = async () => {
       if (stop) return;
@@ -100,7 +102,7 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
       </header>
       <main className="mx-auto grid max-w-6xl gap-6 px-6 pb-20 lg:grid-cols-[1.25fr_1fr]">
         <section className="panel p-6">
-          <h1 className="mb-1 text-lg font-semibold">Checking your application</h1>
+          <h1 className="display mb-1 text-[22px]">Checking your application</h1>
           <p className="mb-5 text-sm text-muted">Each check runs independently; the decision combines all of them.</p>
           <Node n={NODES[0]} ev={evs.ingest} running={running("ingest")} tech={tech} />
           <Connector />
@@ -119,12 +121,18 @@ export default function Progress({ params }: { params: Promise<{ id: string }> }
             {done && band ? (
               <div>
                 <BandBadge band={band} size="lg" />
-                <h2 className="mt-4 text-xl font-semibold tracking-tight">{msg.title}</h2>
+                <h2 className="display mt-4 text-[24px]">{msg.title}</h2>
                 <p className="mt-2 leading-relaxed text-muted">{msg.body}</p>
                 {msg.action && <Link href={msg.action.href} className="btn btn-primary mt-5">{msg.action.label}</Link>}
               </div>
             ) : <div className="flex items-center gap-2 text-muted"><CircleDashed className="size-4 animate-spin" />Checking your application</div>}
           </section>
+          {done && result?.coaching && (result.coaching.tips.length > 0 || result.coaching.manual_review) && (
+            <section className="panel p-6" aria-label="What you can do">
+              <div className="eyebrow mb-3">What you can do</div>
+              <ApplicantTips c={result.coaching} />
+            </section>
+          )}
           <label className="flex cursor-pointer items-center justify-between rounded-lg border border-line bg-panel px-4 py-2.5 text-sm">
             <span>Technical details <span className="text-dim">(for reviewers and demos)</span></span>
             <input type="checkbox" checked={tech} onChange={toggleTech} className="size-4 accent-brand" />

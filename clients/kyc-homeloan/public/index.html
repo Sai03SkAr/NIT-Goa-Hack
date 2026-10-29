@@ -513,9 +513,19 @@ async function startCam() {
     const tag = $("#ct"), wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
     const cd = async (t, s) => { for (let i = s; i > 0; i--) { tag.textContent = `${t} · ${i}`; await wait(1000); } };
     await cd("Look straight at the camera", 2);
-    const frames = [await KYC.toJpeg(v, 960, 0.85)]; // raw (unmirrored) frames: the convention TrueID verifies against
-    for (const step of ch.sequence) { await cd(`Turn your head to your ${step === "turn_left" ? "left ⟵" : "right ⟶"}`, 3); frames.push(await KYC.toJpeg(v, 960, 0.85)); tag.textContent = "Face the camera again"; await wait(800); }
-    S.challenge = ch; S.frames = frames; S.selfie = frames[0]; stopCam();
+    const selfie = await KYC.toJpeg(v, 960, 0.88);
+    // TrueID checks a continuous sweep, not stills: it needs >= 6 frames that start neutral and pass through middle
+    // angles on the way to each turn. So record a burst (~4 fps, raw/unmirrored) through the whole challenge.
+    const frames = [], MAX = 34;
+    let recording = true;
+    const rec = (async () => { while (recording && frames.length < MAX) { frames.push(await KYC.toJpeg(v, 640, 0.8)); await wait(260); } })();
+    await wait(1300);
+    for (const step of ch.sequence) {
+      await cd(`Slowly turn your head to your ${step === "turn_left" ? "left ⟵" : "right ⟶"}`, 3);
+      tag.textContent = "Back to the centre"; await wait(1200);
+    }
+    recording = false; await rec;
+    S.challenge = ch; S.frames = frames; S.selfie = selfie; stopCam();
     setResult("selfie", [C("live_capture", "Captured live from the camera (no upload)", "PASS"),
       C("virtual_camera", "No virtual camera in use", S.camera.virtual ? "FAIL" : "PASS", S.camera.active || ""),
       C("liveness_challenge", "Head-turn challenge from TrueID completed", "PASS", ch.sequence.map((s) => s.replace("_", " ")).join(", ")),
@@ -726,7 +736,8 @@ function done(flagCount) {
     const m = { approved: ["✓", "Identity verified", "Your KYC is complete. Our credit team will contact you about your sanction letter."],
       review: ["!", "We're reviewing your application", "A few details need a closer look. We'll contact you within 2 working days, or sooner if we need another document."],
       declined: ["✕", "We couldn't verify your identity", "We weren't able to complete your KYC online. Please visit a Kestrel branch with your original documents."] }[o];
-    $("#res").innerHTML = `<div class="badge ${o === "approved" ? "" : o}">${m[0]}</div><h2>${m[1]}</h2><p class="note">${m[2]}</p>${tl(o)}<div class="btns" style="justify-content:center"><button class="btn ghost" onclick="location.reload()">Start a new application</button></div>`;
+    const tips = o === "review" && r.tips?.length ? `<div style="text-align:left;margin:16px 0;padding:14px 16px;border:1px solid var(--line, #e4e4e7);border-radius:12px"><b>To speed this up</b>${r.tips.map((t) => `<p style="margin:10px 0 4px;font-weight:500">${esc(t.title)}</p><ul style="margin:0;padding-left:18px">${t.steps.map((x) => `<li class="note">${esc(x)}</li>`).join("")}</ul>`).join("")}</div>` : "";
+    $("#res").innerHTML = `<div class="badge ${o === "approved" ? "" : o}">${m[0]}</div><h2>${m[1]}</h2><p class="note">${m[2]}</p>${tips}${tl(o)}<div class="btns" style="justify-content:center"><button class="btn ghost" onclick="location.reload()">Start a new application</button></div>`;
   };
   poll();
 }
