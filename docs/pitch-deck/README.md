@@ -12,4 +12,6 @@ The source of the PS3 pitch deck, built with Claude Design's Slides type. Each s
 | 6 | `proof` | Measured: 100% recall, ROC-AUC 0.998, 95% reject precision, 0/85 for an adaptive attacker; signed QR vs pixel forensics |
 | 7 | `close` | Built for banks: partner API, regulation, honest limits |
 
+**PowerPoint:** `TrueID_Shield_PS3_Pitch.pptx` is the same 7 slides as a native, editable PowerPoint (Arial and Calibri, so it looks the same on any computer; speaker notes on every slide). It was built by `build_pptx.js` (pptxgenjs).
+
 The live deck (present, comment, export to PDF or PowerPoint) is the owner's Claude artifact. It is private until shared from its Share menu. To rebuild it elsewhere, create a deck from Claude's Slides type and publish these files under `project/` (`project/deck.json`, `project/slides/*.html`).
